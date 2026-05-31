@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Protobuf 심화 · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">DEEP DIVE · 4 확장</p>
+        <h2 class="section-title reveal">Protocol Buffers (Protobuf) 심화</h2>
+        <p class="section-lead reveal">"데이터를 어떻게 <strong>작고 빠르게</strong> 주고받을 것인가" — 구글이 만든 언어 중립 바이너리 직렬화 포맷. gRPC의 기본 포맷이자, <strong>게임 산업의 사실상 표준 패킷 포맷</strong>입니다.</p>
+        <div class="metarow reveal"><span>⏱ 약 25분</span><span>🎯 와이어 포맷 · 스키마 진화 · 게임 활용</span></div>
+      </section>
+
+      <section class="block" id="what">
+        <h2 class="section-title reveal">Protobuf란 무엇인가</h2>
+        <p class="reveal">Protobuf는 <strong>스키마(.proto)를 먼저 정의</strong>하고, 그 스키마로 <strong>여러 언어의 코드를 자동 생성</strong>하며, 데이터를 <strong>조밀한 바이너리</strong>로 직렬화합니다. JSON·XML과 같은 "데이터 표현 포맷"이지만 사람이 읽는 텍스트가 아니라 기계를 위한 압축적 바이너리라는 점이 핵심입니다.</p>
+        <div class="grid c3 reveal">
+          <div class="card flat"><h4>📜 스키마 우선</h4><p style="margin:0;font-size:14px"><code>.proto</code>가 단일 진실 공급원(SSOT). 계약을 코드로 강제.</p></div>
+          <div class="card flat"><h4>🌐 언어 중립</h4><p style="margin:0;font-size:14px">하나의 스키마 → Java·C#·C++·Go·Python… 코드 생성.</p></div>
+          <div class="card flat"><h4>📦 조밀한 바이너리</h4><p style="margin:0;font-size:14px">필드명을 보내지 않고 <strong>번호+타입</strong>만 → JSON 대비 30~60% 작음.</p></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">💡</span><p>JSON은 <code>{"playerId": 12345}</code>처럼 <strong>키 이름까지 매번 전송</strong>합니다. Protobuf는 스키마에서 "1번 필드 = playerId"를 미리 약속했으므로, 네트워크엔 <strong>"1번 필드에 12345"</strong>만 흐릅니다. 키 이름이 사라지는 만큼 작고 빠릅니다.</p></div>
+      </section>
+
+      <section class="block" id="wire">
+        <h2 class="section-title reveal">왜 작고 빠른가 — 와이어 포맷</h2>
+        <p class="reveal">Protobuf의 각 필드는 <strong>(필드번호 · 와이어타입)</strong> 태그 1바이트 + 값으로 인코딩됩니다. 정수는 <strong>varint</strong>(작은 수일수록 적은 바이트)로 저장돼, 대부분의 게임 패킷처럼 작은 값이 많은 데이터에서 극적으로 작아집니다.</p>
+        <div class="diagram reveal">
+          <h4 style="margin-top:0">같은 데이터, 다른 크기</h4>
+          <div class="layer-stack">
+            <div class="layer"><div class="ln" style="background:var(--amber-bg);color:#9a5b00">JSON</div><div><div class="lt">{"id":12345,"x":3,"y":7,"hp":100}</div><div class="ld">약 34 bytes — 키 이름·따옴표·콤마 모두 전송</div></div></div>
+            <div class="layer"><div class="ln" style="background:#e6f9f0;color:#05875b">PB</div><div><div class="lt">08 b9 60 10 03 18 07 20 64</div><div class="ld">약 9 bytes — 번호+값만. varint로 작은 수는 1바이트</div></div></div>
+          </div>
+        </div>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>varint</h4><p style="margin:0;font-size:14px">작은 정수는 1바이트, 큰 정수만 늘어남. 좌표·HP·카운트 등에 유리.</p></div>
+          <div class="card flat"><h4>태그 = 번호 &lt;&lt; 3 | 타입</h4><p style="margin:0;font-size:14px">필드를 번호로 식별 → 필드명 문자열 불필요, 순서 무관.</p></div>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p>바이너리라서 <strong>사람이 바로 못 읽고 디버깅이 번거롭습니다</strong>(스키마 없이는 해석 불가). 또한 Protobuf는 <strong>압축도 암호화도 아닙니다</strong> — 민감 데이터는 TLS, 큰 페이로드는 별도 압축(gzip/zstd)을 함께 써야 합니다.</p></div>
+      </section>
+
+      <section class="block" id="schema">
+        <h2 class="section-title reveal">스키마 작성 (proto3)</h2>
+        <p class="reveal">메시지(message)·열거형(enum)·반복(repeated)·맵(map)·<code>oneof</code> 등으로 데이터를 표현합니다. 게임에서 자주 쓰는 형태를 모았습니다.</p>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">game.proto</span></div>
+          <pre><code><span class="k">syntax</span> = <span class="s">"proto3"</span>;
+<span class="k">package</span> game;
+
+<span class="c">// 좌표 — 작은 정수가 많아 varint 효율이 큼</span>
+<span class="k">message</span> <span class="t">Vec3</span> {
+  <span class="t">float</span> x = <span class="n">1</span>;
+  <span class="t">float</span> y = <span class="n">2</span>;
+  <span class="t">float</span> z = <span class="n">3</span>;
+}
+
+<span class="k">enum</span> <span class="t">Team</span> {
+  TEAM_UNKNOWN = <span class="n">0</span>;   <span class="c">// proto3는 0번 기본값 필수</span>
+  TEAM_RED     = <span class="n">1</span>;
+  TEAM_BLUE    = <span class="n">2</span>;
+}
+
+<span class="c">// 플레이어 상태 스냅샷(서버→클라 브로드캐스트)</span>
+<span class="k">message</span> <span class="t">PlayerState</span> {
+  <span class="t">uint32</span> player_id = <span class="n">1</span>;
+  <span class="t">Vec3</span>   position  = <span class="n">2</span>;
+  <span class="t">float</span>  yaw       = <span class="n">3</span>;
+  <span class="t">uint32</span> hp        = <span class="n">4</span>;
+  <span class="t">Team</span>   team      = <span class="n">5</span>;
+  <span class="k">repeated</span> <span class="t">uint32</span> buff_ids = <span class="n">6</span>;  <span class="c">// 가변 길이 목록</span>
+}</code></pre>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🔑</span><p><strong>필드 번호는 영원한 식별자</strong>입니다. 1~15번은 태그가 1바이트라 <strong>자주 쓰는 필드에 우선 배정</strong>하면 패킷이 더 작아집니다(게임 좌표·HP 등).</p></div>
+      </section>
+
+      <section class="block" id="oneof">
+        <h2 class="section-title reveal">핵심 패턴: oneof 메시지 봉투(Envelope)</h2>
+        <p class="reveal">실시간 게임에서는 한 연결로 <strong>수십 종류의 메시지</strong>(입력·이동·채팅·스킬…)가 흐릅니다. 이를 하나의 <strong>봉투(Envelope) 메시지 + <code>oneof</code></strong>로 감싸면, 단일 채널에서 타입 안전하게 라우팅할 수 있습니다. 게임 서버의 거의 표준 패턴입니다.</p>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">envelope.proto</span></div>
+          <pre><code><span class="c">// 클라→서버 입력</span>
+<span class="k">message</span> <span class="t">InputCommand</span> {
+  <span class="t">uint32</span> seq        = <span class="n">1</span>;   <span class="c">// 클라 시퀀스(재전송/보정용)</span>
+  <span class="t">bool</span>   move_fwd   = <span class="n">2</span>;
+  <span class="t">bool</span>   fire       = <span class="n">3</span>;
+  <span class="t">float</span>  aim_yaw    = <span class="n">4</span>;
+}
+<span class="k">message</span> <span class="t">ChatMessage</span> { <span class="t">uint32</span> from = <span class="n">1</span>; <span class="t">string</span> text = <span class="n">2</span>; }
+<span class="k">message</span> <span class="t">Ping</span>        { <span class="t">uint64</span> client_time_ms = <span class="n">1</span>; }
+
+<span class="c">// 한 채널로 흐르는 모든 메시지를 감싸는 봉투</span>
+<span class="k">message</span> <span class="t">ClientEnvelope</span> {
+  <span class="k">oneof</span> payload {
+    <span class="t">InputCommand</span> input = <span class="n">1</span>;
+    <span class="t">ChatMessage</span>  chat  = <span class="n">2</span>;
+    <span class="t">Ping</span>         ping  = <span class="n">3</span>;
+  }
+}</code></pre>
+        </div>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node green">Unity 클라<br/>C#</div>
+            <div class="arrow">⇄<span class="lbl">Envelope(bytes)</span></div>
+            <div class="node blue">WebSocket / UDP</div>
+            <div class="arrow">⇄<span class="lbl">oneof로 분기</span></div>
+            <div class="node green">게임 서버<br/>Java/C++/Go</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="game">
+        <h2 class="section-title reveal">🎮 게임 산업에서의 활용</h2>
+        <p class="section-lead reveal">게임은 "초당 수십 번, 수많은 플레이어에게" 상태를 주고받습니다. 대역폭·지연·CPU가 곧 체감 품질이라, 작고 빠른 Protobuf가 자연스럽게 표준이 되었습니다.</p>
+
+        <div class="grid c2 reveal" style="margin-top:8px">
+          <div class="uc"><div class="uci">🕹️</div><div><h4>실시간 멀티플레이 패킷</h4><p>이동·입력·스킬을 tick(예: 20~60Hz)마다 직렬화. 작은 페이로드 + 빠른 파싱으로 대역폭·지연 최소화.</p><span class="who">WebSocket/UDP + PB</span></div></div>
+          <div class="uc"><div class="uci">🤝</div><div><h4>클라↔서버 공용 스키마</h4><p>Unity(C#)·Unreal(C++) 클라이언트와 Java/C++/Go 서버가 <strong>하나의 .proto</strong>를 공유 → 직렬화 버그·타입 불일치 차단.</p><span class="who">Polyglot</span></div></div>
+          <div class="uc"><div class="uci">🧩</div><div><h4>매치메이킹·로비·인벤토리 API</h4><p>백엔드 마이크로서비스 간은 <strong>gRPC + Protobuf</strong>로 저지연 호출(매칭, 상점, 진행도 저장).</p><span class="who">gRPC</span></div></div>
+          <div class="uc"><div class="uci">💾</div><div><h4>세이브 데이터 · 리플레이</h4><p>스키마 진화가 쉬워 <strong>저장 포맷</strong>으로도 적합. 입력 로그를 PB로 쌓아 리플레이/치팅 분석.</p><span class="who">Storage</span></div></div>
+        </div>
+
+        <h3 class="reveal">전형적인 게임 네트워크 스택</h3>
+        <div class="diagram reveal">
+          <div class="layer-stack">
+            <div class="layer"><div class="ln" style="background:var(--blue-50);color:var(--blue-dark)">앱</div><div><div class="lt">게임 로직 (이동·전투·스킬)</div><div class="ld">생성된 PB 타입을 직접 사용</div></div></div>
+            <div class="layer"><div class="ln" style="background:#e6f9f0;color:#05875b">직렬화</div><div><div class="lt">Protobuf — Envelope + oneof</div><div class="ld">메시지 타입 라우팅, 버전 호환</div></div></div>
+            <div class="layer"><div class="ln" style="background:var(--amber-bg);color:#9a5b00">전송</div><div><div class="lt">신뢰 채널 = TCP/WebSocket · 실시간 = UDP(ENet/KCP/QUIC)</div><div class="ld">채팅/상점은 신뢰 전송, 위치는 손실 허용 UDP</div></div></div>
+          </div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p><strong>분리가 핵심</strong> — Protobuf는 "무엇을 보낼지(데이터 형태)"를 담당하고, "어떻게 보낼지(신뢰성·순서·재전송)"는 전송 계층(TCP/UDP)이 담당합니다. 같은 PB 메시지를 TCP로도 UDP로도 흘릴 수 있습니다.</p></div>
+
+        <h3 class="reveal">예시 ① 클라이언트(Unity · C#)에서 입력 전송</h3>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">NetworkClient.cs</span></div>
+          <pre><code><span class="c">// protoc로 생성된 C# 타입 사용</span>
+<span class="k">var</span> env = <span class="k">new</span> <span class="t">ClientEnvelope</span> {
+    Input = <span class="k">new</span> <span class="t">InputCommand</span> {
+        Seq = ++_seq, MoveFwd = <span class="k">true</span>, Fire = <span class="k">false</span>, AimYaw = aim
+    }
+};
+<span class="t">byte</span>[] bytes = env.<span class="f">ToByteArray</span>();   <span class="c">// 직렬화 (수 바이트)</span>
+_socket.<span class="f">Send</span>(bytes);                  <span class="c">// WebSocket/UDP로 전송</span></code></pre>
+        </div>
+
+        <h3 class="reveal">예시 ② 서버(Java)에서 봉투 해석·라우팅</h3>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">GamePacketHandler.java</span></div>
+          <pre><code><span class="t">ClientEnvelope</span> env = <span class="t">ClientEnvelope</span>.<span class="f">parseFrom</span>(bytes); <span class="c">// 역직렬화</span>
+
+<span class="k">switch</span> (env.<span class="f">getPayloadCase</span>()) {           <span class="c">// oneof 분기</span>
+    <span class="k">case</span> INPUT -&gt; applyInput(playerId, env.<span class="f">getInput</span>());
+    <span class="k">case</span> CHAT  -&gt; broadcastChat(env.<span class="f">getChat</span>());
+    <span class="k">case</span> PING  -&gt; sendPong(playerId, env.<span class="f">getPing</span>());
+    <span class="k">case</span> PAYLOAD_NOT_SET -&gt; log.<span class="f">warn</span>(<span class="s">"empty packet"</span>);
+}</code></pre>
+        </div>
+
+        <h3 class="reveal">예시 ③ 서버→클라 상태 브로드캐스트(스냅샷)</h3>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">snapshot.proto</span></div>
+          <pre><code><span class="c">// 한 tick의 모든 가시 플레이어 상태를 묶어 전송</span>
+<span class="k">message</span> <span class="t">WorldSnapshot</span> {
+  <span class="t">uint32</span> tick = <span class="n">1</span>;
+  <span class="k">repeated</span> <span class="t">PlayerState</span> players = <span class="n">2</span>;  <span class="c">// 관심 영역(AOI)만 포함</span>
+}</code></pre>
+        </div>
+        <div class="callout info reveal"><span class="emoji">⚡</span><p>실무 최적화: <strong>델타 압축</strong>(직전 스냅샷 대비 변경 필드만), <strong>관심 영역(AOI)</strong>으로 가까운 플레이어만 포함, 좌표를 <code>float</code> 대신 <code>sint32</code>(고정 스케일)로 양자화 — 모두 PB 위에서 자연스럽게 적용됩니다.</p></div>
+      </section>
+
+      <section class="block" id="evolution">
+        <h2 class="section-title reveal">스키마 진화 & 라이브 운영</h2>
+        <p class="reveal">라이브 게임은 <strong>클라이언트 구버전과 서버 신버전이 공존</strong>합니다. Protobuf는 호환 규칙만 지키면 무중단으로 필드를 추가할 수 있습니다.</p>
+        <div class="vs reveal">
+          <div class="side">
+            <h4 style="color:var(--green)">✅ 안전한 변경</h4>
+            <ul>
+              <li>새 필드를 <strong>새 번호</strong>로 추가 (구버전은 무시)</li>
+              <li>필드 삭제 시 번호를 <code>reserved</code>로 영구 봉인</li>
+              <li>enum에 값 추가(0번은 UNKNOWN 유지)</li>
+            </ul>
+          </div>
+          <div class="mid">VS</div>
+          <div class="side">
+            <h4 style="color:var(--red)">🚫 깨지는 변경</h4>
+            <ul>
+              <li><strong>필드 번호 재사용/변경</strong> → 데이터 오염</li>
+              <li>타입 변경(호환 안 되는 와이어타입)</li>
+              <li>required 의존(proto3엔 없음)·의미 변경</li>
+            </ul>
+          </div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">진화 예시</span></div>
+          <pre><code><span class="k">message</span> <span class="t">PlayerState</span> {
+  <span class="t">uint32</span> player_id = <span class="n">1</span>;
+  <span class="t">Vec3</span>   position  = <span class="n">2</span>;
+  <span class="c">// ... 기존 필드 ...</span>
+  <span class="k">reserved</span> <span class="n">7</span>;              <span class="c">// 과거 'stamina' 삭제 → 번호 재사용 금지</span>
+  <span class="t">uint32</span> skin_id = <span class="n">8</span>;     <span class="c">// 신규: 구버전 클라는 그냥 무시</span>
+}</code></pre>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">🛡️</span><p><strong>buf</strong>로 CI에서 <em>breaking change 검사</em>를 자동화하면, 라이브 클라이언트를 깨는 스키마 변경을 머지 전에 막을 수 있습니다.</p></div>
+      </section>
+
+      <section class="block" id="tooling">
+        <h2 class="section-title reveal">도구 & 대안</h2>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">protoc</span><span class="kind cli">CLI</span><p>공식 컴파일러. <code>--csharp_out</code>·<code>--java_out</code>·<code>--cpp_out</code>으로 클라/서버 코드 생성.</p></div></div>
+          <div class="tool"><div><span class="tn">buf</span><span class="kind cli">CLI</span><p>린트·포맷·<strong>호환성(breaking) 검사</strong>·원격 생성. 모던 protobuf 워크플로의 표준.</p></div></div>
+          <div class="tool"><div><span class="tn">protobuf-net / Google.Protobuf</span><span class="kind lib">C#</span><p>Unity 클라이언트용 런타임. IL2CPP/AOT 환경 호환 확인 필요.</p></div></div>
+          <div class="tool"><div><span class="tn">protoc-gen-validate</span><span class="kind lib">LIB</span><p>스키마에 검증 규칙을 선언 → 서버에서 자동 검증(치팅 방지 1차선).</p></div></div>
+        </div>
+        <h3 class="reveal">언제 다른 포맷을 고려하나</h3>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><th></th><th>Protobuf</th><th>FlatBuffers</th><th>JSON</th></tr></thead>
+            <tbody>
+              <tr><td>크기/속도</td><td><strong>작고 빠름</strong></td><td>매우 빠름</td><td>크고 느림</td></tr>
+              <tr><td>파싱</td><td>역직렬화 필요</td><td><strong>zero-copy(파싱 0)</strong></td><td>파싱 필요</td></tr>
+              <tr><td>적합</td><td>범용·서버 통신·대부분 게임</td><td>초고빈도/대용량(스냅샷, 에셋)</td><td>디버깅·외부 연동</td></tr>
+              <tr><td>가독성</td><td>낮음</td><td>낮음</td><td><strong>높음</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p>대부분의 게임은 Protobuf로 충분합니다. <strong>매 프레임 대량 객체를 읽기만</strong> 하는 극단적 경로(예: 거대한 월드 스냅샷, 에셋)에서 파싱 비용이 문제될 때 <strong>FlatBuffers</strong>(zero-copy)를 부분 도입하는 식으로 섞어 씁니다.</p></div>
+      </section>
+
+      <section class="block" id="summary">
+        <h2 class="section-title reveal">핵심 요약</h2>
+        <ul class="reveal" style="font-size:16px;line-height:2">
+          <li><strong>스키마 우선 + 바이너리</strong> — 필드명을 안 보내고 번호로 식별해 작고 빠름.</li>
+          <li><strong>oneof 봉투 패턴</strong>이 게임 실시간 메시지 라우팅의 사실상 표준.</li>
+          <li><strong>데이터 형태(PB)와 전송(TCP/UDP)은 분리</strong> — 같은 메시지를 채널만 바꿔 사용.</li>
+          <li><strong>필드 번호는 불변</strong> — reserved로 봉인, buf로 breaking 검사 → 라이브 무중단.</li>
+          <li>압축·암호화가 아니므로 <strong>TLS·압축은 별도</strong>로 챙긴다.</li>
+        </ul>
+      </section>
+
+      <div class="pager">
+        <a href="rpc-graphql.html"><div class="dir">← 이전</div><div class="ttl">4. gRPC & GraphQL</div></a>
+        <a class="next" href="async.html"><div class="dir">다음 →</div><div class="ttl">5. 비동기 메시징</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

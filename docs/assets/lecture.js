@@ -7,6 +7,7 @@ const GROUPS = [
     { href: "http.html",        num: "2",  label: "HTTP & HTTPS" },
     { href: "realtime.html",    num: "3",  label: "실시간 통신" },
     { href: "rpc-graphql.html", num: "4",  label: "gRPC & GraphQL" },
+    { href: "protobuf.html",    num: "📦", label: "Protobuf 심화" },
     { href: "async.html",       num: "5",  label: "비동기 메시징" },
     { href: "webflux.html",     num: "6",  label: "WebFlux & 코루틴" },
     { href: "guide.html",       num: "7",  label: "기술 선택 가이드" },
