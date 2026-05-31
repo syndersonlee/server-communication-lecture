@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>5. 비동기 메시징 · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">CHAPTER 5</p>
+        <h2 class="section-title reveal">비동기 메시징</h2>
+        <p class="section-lead reveal">"메시지를 던져놓고 내 할 일 하기." 동기 호출의 강결합과 장애 전파를 끊습니다.</p>
+      </section>
+
+      <section class="block" id="why">
+        <h2 class="section-title reveal">왜 비동기인가</h2>
+        <div class="vs reveal">
+          <div class="side">
+            <h4>😰 동기 (직접 호출)</h4>
+            <div class="flow" style="justify-content:flex-start;margin:10px 0">
+              <span class="node" style="font-size:12px;padding:8px 12px">주문</span><span class="arrow">→</span>
+              <span class="node" style="font-size:12px;padding:8px 12px">결제</span><span class="arrow">→</span>
+              <span class="node" style="font-size:12px;padding:8px 12px">재고</span>
+            </div>
+            <ul><li>하나만 죽어도 전체 실패</li><li>응답시간 = 모든 단계 합</li><li>강결합</li></ul>
+          </div>
+          <div class="mid">VS</div>
+          <div class="side">
+            <h4>😎 비동기 (메시지)</h4>
+            <div class="flow" style="justify-content:flex-start;margin:10px 0">
+              <span class="node" style="font-size:12px;padding:8px 12px">주문</span><span class="arrow">→</span>
+              <span class="node blue" style="font-size:12px;padding:8px 12px">브로커</span><span class="arrow">⇉</span>
+              <span class="node" style="font-size:12px;padding:8px 12px">N개 소비</span>
+            </div>
+            <ul><li>던지고 즉시 응답</li><li>장애 격리·트래픽 완충</li><li>느슨한 결합</li></ul>
+          </div>
+        </div>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>📮 메시지 큐 (P2P)</h4><p style="margin:0;font-size:15px">하나의 메시지를 한 컨슈머가 가져감 → 작업 분배</p></div>
+          <div class="card flat"><h4>📡 Pub/Sub</h4><p style="margin:0;font-size:15px">하나의 메시지를 구독자 모두가 받음 → 브로드캐스트</p></div>
+        </div>
+      </section>
+
+      <section class="block" id="kafka-rabbit">
+        <h2 class="section-title reveal">RabbitMQ vs Kafka</h2>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><th></th><th>RabbitMQ</th><th>Kafka</th></tr></thead>
+            <tbody>
+              <tr><td>모델</td><td>메시지 브로커(큐)</td><td>이벤트 로그/스트림</td></tr>
+              <tr><td>소비 후</td><td>삭제</td><td><strong>보존(재처리 가능)</strong></td></tr>
+              <tr><td>처리량</td><td>중간</td><td>매우 높음</td></tr>
+              <tr><td>강점</td><td>복잡한 라우팅, 작업 큐</td><td>대용량 이벤트, EDA 중추</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">Kafka — Spring</span></div>
+          <pre><code><span class="c">// 발행</span>
+kafkaTemplate.<span class="f">send</span>(<span class="s">"orders"</span>, <span class="t">String</span>.<span class="f">valueOf</span>(event.<span class="f">orderId</span>()), event);
+
+<span class="c">// 소비</span>
+<span class="n">@KafkaListener</span>(topics = <span class="s">"orders"</span>, groupId = <span class="s">"inventory-service"</span>)
+<span class="k">public void</span> <span class="f">consume</span>(<span class="t">OrderCreatedEvent</span> event) {
+    inventoryService.<span class="f">decrease</span>(event.<span class="f">getProductId</span>(), event.<span class="f">getQty</span>());
+}</code></pre>
+        </div>
+        <div class="callout info reveal"><span class="emoji">📡</span><p><strong>MQTT</strong>는 초경량 pub/sub 프로토콜로 IoT·모바일 등 저전력 환경에 최적입니다(QoS 0/1/2).</p></div>
+      </section>
+
+      <section class="block" id="hard">
+        <h2 class="section-title reveal">비동기의 대가 ⚠️</h2>
+        <p class="reveal">비동기는 공짜가 아닙니다. 반드시 설계해야 할 것들:</p>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>🔁 메시지 중복</h4><p style="margin:0;font-size:15px">대개 at-least-once → <strong>멱등 컨슈머</strong> 필수</p></div>
+          <div class="card flat"><h4>🔢 순서 보장</h4><p style="margin:0;font-size:15px">전역 순서 어려움 → Kafka 파티션 키로 부분 보장</p></div>
+          <div class="card flat"><h4>💀 실패 처리</h4><p style="margin:0;font-size:15px">실패 메시지를 <strong>DLQ</strong>로 보내 재처리/분석</p></div>
+          <div class="card flat"><h4>🔗 정합성</h4><p style="margin:0;font-size:15px">DB 저장+발행을 함께 → <strong>Transactional Outbox</strong></p></div>
+        </div>
+      </section>
+
+      <div class="pager">
+        <a href="rpc-graphql.html"><div class="dir">← 이전</div><div class="ttl">4. gRPC & GraphQL</div></a>
+        <a class="next" href="webflux.html"><div class="dir">다음 →</div><div class="ttl">6. WebFlux & 코루틴</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

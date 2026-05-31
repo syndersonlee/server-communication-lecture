@@ -204,4 +204,4 @@ public class OrderProducer {
 
 ---
 
-이전 → [08. GraphQL](./08-graphql.md) | 다음 → [10. 기술 선택 가이드](./10-comparison-and-selection.md)
+이전 → [08. GraphQL](./08-graphql.md) | 다음 → [10. WebFlux와 코루틴](./10-webflux-coroutine.md)

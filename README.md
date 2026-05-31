@@ -23,7 +23,7 @@
 
 ---
 
-## 전체 목차 (예상 소요 시간: 약 2시간)
+## 전체 목차 (예상 소요 시간: 약 2시간 20분)
 
 | #  | 챕터 | 핵심 키워드 | 소요(분) |
 |----|------|-------------|:--------:|
@@ -37,7 +37,12 @@
 | 07 | [gRPC](./07-grpc.md) | HTTP/2, Protobuf, 스트리밍 | 15 |
 | 08 | [GraphQL](./08-graphql.md) | 스키마, 쿼리, Over/Under-fetching | 10 |
 | 09 | [비동기 메시징](./09-messaging.md) | MQ, Kafka, RabbitMQ, AMQP, MQTT | 20 |
-| 10 | [기술 선택 가이드](./10-comparison-and-selection.md) | 비교표, 의사결정 트리, 실전 시나리오 | 10 |
+| 10 | [WebFlux와 코루틴](./10-webflux-coroutine.md) | 리액티브, Mono/Flux, 코루틴, 가상 스레드 | 20 |
+| 11 | [기술 선택 가이드](./11-comparison-and-selection.md) | 비교표, 의사결정 트리, 실전 시나리오 | 10 |
+
+> 🌐 **시각화된 웹 강의 자료**: [`docs/index.html`](./docs/index.html) 을 브라우저로 열면
+> 토스 스타일의 시각적인 강의 사이트로 전체 내용을 볼 수 있습니다.
+> 🛠 **직접 실행하는 실습**: [`practice/`](./practice) 의 Spring Boot 앱을 띄우면 각 기법을 브라우저에서 호출해볼 수 있습니다.
 
 ---
 

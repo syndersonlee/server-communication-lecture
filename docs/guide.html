@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>7. 기술 선택 가이드 · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">CHAPTER 7</p>
+        <h2 class="section-title reveal">기술 선택 가이드</h2>
+        <p class="section-lead reveal">"정답인 기술은 없고, 상황에 맞는 기술이 있을 뿐." 모든 것을 한자리에 모읍니다.</p>
+      </section>
+
+      <section class="block" id="table">
+        <h2 class="section-title reveal">전체 비교표</h2>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><th>기술</th><th>방향</th><th>동기/비동기</th><th>주 용도</th></tr></thead>
+            <tbody>
+              <tr><td><strong>HTTP/REST</strong></td><td>요청-응답</td><td>동기</td><td>범용 API, CRUD</td></tr>
+              <tr><td><strong>gRPC</strong></td><td>단방향+스트리밍</td><td>동기</td><td>서버 간 고성능(MSA)</td></tr>
+              <tr><td><strong>GraphQL</strong></td><td>요청-응답</td><td>동기</td><td>유연한 조회(BFF)</td></tr>
+              <tr><td><strong>SSE</strong></td><td>서버→클라</td><td>스트림</td><td>알림·피드·시세·LLM</td></tr>
+              <tr><td><strong>WebSocket</strong></td><td>양방향</td><td>스트림</td><td>채팅·게임·협업</td></tr>
+              <tr><td><strong>Kafka/RabbitMQ</strong></td><td>pub/sub·큐</td><td>비동기</td><td>이벤트, 디커플링</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block" id="tree">
+        <h2 class="section-title reveal">의사결정 트리</h2>
+        <ol class="steps reveal">
+          <li><h4>즉시 응답이 필요한가?</h4><p>아니오(던져놓고 잊음) → 비동기 메시징 (대용량·재처리 <strong>Kafka</strong>, 라우팅·작업큐 <strong>RabbitMQ</strong>, IoT <strong>MQTT</strong>)</p></li>
+          <li><h4>실시간으로 계속 받아야 하나?</h4><p>아니오(단발성) → 서버 간 고성능 <strong>gRPC</strong>, 다양한 데이터 조합 <strong>GraphQL</strong>, 그 외 <strong>REST</strong></p></li>
+          <li><h4>(실시간) 양방향이 필요한가?</h4><p>양방향 → <strong>WebSocket</strong>, 서버→클라면 충분 → <strong>SSE</strong></p></li>
+          <li><h4>서버 동시성 모델은?</h4><p>단순 → <strong>MVC</strong>, 고동시성+블로킹 라이브러리 → <strong>MVC+가상스레드</strong>, 스트리밍/백프레셔 → <strong>WebFlux/코루틴</strong></p></li>
+        </ol>
+      </section>
+
+      <section class="block" id="scenario">
+        <h2 class="section-title reveal">실전 시나리오</h2>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>🏨 숙소 예약 API</h4><p style="margin:0;font-size:15px"><strong>REST</strong> — 표준 CRUD·캐싱. 결제는 멱등키 적용</p></div>
+          <div class="card flat"><h4>📊 예약 후속 처리</h4><p style="margin:0;font-size:15px"><strong>Kafka</strong> — 정산·알림·추천을 이벤트로 디커플링</p></div>
+          <div class="card flat"><h4>🔔 실시간 예약 현황</h4><p style="margin:0;font-size:15px"><strong>SSE</strong> — 서버→클라 단방향, Redis Pub/Sub로 fan-out</p></div>
+          <div class="card flat"><h4>💬 고객센터 채팅</h4><p style="margin:0;font-size:15px"><strong>WebSocket+STOMP</strong> — 외부 브로커로 스케일아웃</p></div>
+          <div class="card flat"><h4>🔗 MSA 내부 통신</h4><p style="margin:0;font-size:15px"><strong>gRPC</strong> — 저지연 다수 호출. 외부는 REST</p></div>
+          <div class="card flat"><h4>🤖 AI 컨시어지 스트리밍</h4><p style="margin:0;font-size:15px"><strong>SSE</strong> — LLM 토큰 스트리밍의 표준</p></div>
+        </div>
+      </section>
+
+      <section class="block" id="principles">
+        <h2 class="section-title reveal">성능·확장 공통 원칙</h2>
+        <div class="card reveal">
+          <ol style="margin:0">
+            <li><strong>연결은 비싸다</strong> → 재사용하라 (Keep-Alive, 커넥션 풀, HTTP/2)</li>
+            <li><strong>단방향이면 양방향을 쓰지 마라</strong> → SSE로 될 일에 WebSocket 금지</li>
+            <li><strong>즉시 응답이 불필요하면 비동기로</strong> → 응답 시간에서 무거운 작업 제거</li>
+            <li><strong>재시도엔 멱등성을</strong> → 중복 결제 방지</li>
+            <li><strong>실시간 다중 서버는 fan-out 설계</strong> → Redis Pub/Sub, 외부 브로커</li>
+            <li><strong>장애를 전제로 설계</strong> → 타임아웃, 서킷브레이커, DLQ, 백프레셔</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="block" id="outro">
+        <h2 class="section-title reveal">마무리 🎓</h2>
+        <div class="callout tip reveal"><span class="emoji">✨</span><p>각 기술이 <strong>어떤 문제를 풀기 위해 등장했는지</strong>(=이전 기술의 한계를 어떻게 극복했는지)를 이해하면, 새 기술이 나와도 그 자리를 금방 파악할 수 있습니다. 수고하셨습니다!</p></div>
+        <div class="cta reveal" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+          <a class="btn" href="https://github.com/syndersonlee/server-communication-lecture/tree/main/practice">🛠 Spring 실습 앱 실행하기</a>
+          <a class="btn ghost" href="index.html">처음으로</a>
+        </div>
+      </section>
+
+      <div class="pager">
+        <a href="webflux.html"><div class="dir">← 이전</div><div class="ttl">6. WebFlux & 코루틴</div></a>
+        <a class="next" href="index.html"><div class="dir">처음 →</div><div class="ttl">0. 오리엔테이션</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

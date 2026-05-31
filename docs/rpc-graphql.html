@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4. gRPC & GraphQL · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">CHAPTER 4</p>
+        <h2 class="section-title reveal">gRPC & GraphQL</h2>
+        <p class="section-lead reveal">REST를 넘어서 — 서버 간 고성능 통신(gRPC)과 유연한 데이터 조회(GraphQL).</p>
+      </section>
+
+      <section class="block" id="grpc">
+        <h2 class="section-title reveal">gRPC</h2>
+        <p class="reveal">구글이 만든 고성능 RPC. 원격 함수를 로컬 함수처럼 호출합니다. 주로 <strong>MSA 내부 서버 간 통신</strong>에 사용.</p>
+        <div class="grid c3 reveal">
+          <div class="card flat"><h4>⚙️ HTTP/2</h4><p style="margin:0;font-size:14px">멀티플렉싱·스트리밍·헤더압축 기본</p></div>
+          <div class="card flat"><h4>📦 Protobuf</h4><p style="margin:0;font-size:14px">바이너리 직렬화 → JSON보다 작고 빠름</p></div>
+          <div class="card flat"><h4>📜 IDL(.proto)</h4><p style="margin:0;font-size:14px">계약 우선 정의 → 다국어 코드 자동 생성</p></div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">user.proto + Spring</span></div>
+          <pre><code><span class="c">// 계약 정의</span>
+<span class="k">service</span> <span class="t">UserService</span> {
+  <span class="k">rpc</span> <span class="f">GetUser</span> (<span class="t">GetUserRequest</span>) <span class="k">returns</span> (<span class="t">UserResponse</span>);
+}
+
+<span class="c">// 서버</span>
+<span class="n">@GrpcService</span>
+<span class="k">public class</span> <span class="t">UserServiceImpl</span> <span class="k">extends</span> <span class="t">UserServiceImplBase</span> {
+    <span class="n">@Override</span> <span class="k">public void</span> <span class="f">getUser</span>(<span class="t">GetUserRequest</span> req, <span class="t">StreamObserver</span>&lt;<span class="t">UserResponse</span>&gt; obs) {
+        obs.<span class="f">onNext</span>(...); obs.<span class="f">onCompleted</span>();
+    }
+}</code></pre>
+        </div>
+        <div class="card flat reveal">
+          <h4>4가지 통신 방식</h4>
+          <p style="margin:0;font-size:15px">Unary(단일) · Server Streaming · Client Streaming · <strong>Bidirectional</strong>(양방향) — HTTP/2 스트리밍 덕분.</p>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p>브라우저는 HTTP/2 프레임을 raw로 못 다뤄 <strong>직접 호출 불가</strong>(gRPC-Web + 프록시 필요). 그래서 <strong>외부 공개는 REST, 내부는 gRPC</strong>가 전형적입니다.</p></div>
+      </section>
+
+      <section class="block" id="graphql">
+        <h2 class="section-title reveal">GraphQL</h2>
+        <p class="reveal">클라이언트가 <strong>필요한 데이터의 형태를 직접 명시</strong>해서 요청. 단일 엔드포인트(<code>/graphql</code>)에 POST.</p>
+        <div class="vs reveal">
+          <div class="side">
+            <h4>😵 REST의 문제</h4>
+            <ul><li><strong>Over-fetching</strong>: 이름만 필요한데 전부 받음</li><li><strong>Under-fetching</strong>: 화면 하나에 N번 호출</li></ul>
+          </div>
+          <div class="mid">→</div>
+          <div class="side">
+            <h4>😎 GraphQL</h4>
+            <ul><li>필요한 필드만, 한 번의 요청으로</li><li>강타입 스키마, 자동 문서화</li></ul>
+          </div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">query</span></div>
+          <pre><code><span class="k">query</span> {
+  <span class="f">user</span>(id: <span class="n">1</span>) {
+    name
+    reservations { checkIn  hotel { name } }   <span class="c">// 필요한 것만</span>
+  }
+}</code></pre>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p>대가: <strong>HTTP 캐싱 곤란</strong>(POST 단일 엔드포인트), <strong>N+1 문제</strong>(→ DataLoader 배치 로딩), 쿼리 복잡도 제어 필요. 다양한 클라이언트가 다른 데이터를 요구하는 <strong>BFF</strong>에 강점.</p></div>
+      </section>
+
+      <section class="block" id="compare">
+        <h2 class="section-title reveal">REST vs gRPC vs GraphQL</h2>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><th></th><th>REST</th><th>gRPC</th><th>GraphQL</th></tr></thead>
+            <tbody>
+              <tr><td>철학</td><td>자원 중심</td><td>함수/동작 중심</td><td>쿼리 중심</td></tr>
+              <tr><td>포맷</td><td>JSON(텍스트)</td><td>Protobuf(바이너리)</td><td>JSON</td></tr>
+              <tr><td>강점</td><td>범용·캐싱</td><td><strong>서버 간 고성능</strong></td><td><strong>유연한 조회</strong></td></tr>
+              <tr><td>브라우저</td><td>O</td><td>△(gRPC-Web)</td><td>O</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p>대형 서비스의 전형: <strong>외부(앱/웹)는 REST(+GraphQL), 내부 MSA 간은 gRPC.</strong></p></div>
+      </section>
+
+      <div class="pager">
+        <a href="realtime.html"><div class="dir">← 이전</div><div class="ttl">3. 실시간 통신</div></a>
+        <a class="next" href="async.html"><div class="dir">다음 →</div><div class="ttl">5. 비동기 메시징</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>6. WebFlux & 코루틴 · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">CHAPTER 6</p>
+        <h2 class="section-title reveal">WebFlux & 코루틴</h2>
+        <p class="section-lead reveal">시선을 서버 안쪽으로 — "이 통신들을 처리하는 <strong>서버의 동시성 모델</strong>을 어떻게 가져갈 것인가?"</p>
+      </section>
+
+      <section class="block" id="problem">
+        <h2 class="section-title reveal">출발점: Thread-per-Request의 한계</h2>
+        <p class="reveal">전통적 Spring MVC(톰캣)는 <strong>요청 1개 = 스레드 1개</strong>입니다. 문제는 <strong>I/O 대기</strong> — DB나 외부 API 응답을 기다리는 동안 그 스레드는 아무 일도 안 하면서 점유됩니다.</p>
+        <div class="diagram reveal">
+          <div class="layer-stack">
+            <div class="layer"><div class="ln" style="background:var(--red-bg);color:var(--red)">A</div><div><div class="lt">요청 A · 스레드1</div><div class="ld">DB 호출(50ms) ⏳ 외부API(200ms) ⏳ ← 그동안 스레드는 "놀고 있음"</div></div></div>
+            <div class="layer"><div class="ln" style="background:var(--red-bg);color:var(--red)">B</div><div><div class="lt">요청 B · 스레드2</div><div class="ld">⏳ 대기 중...</div></div></div>
+            <div class="layer"><div class="ln" style="background:var(--gray-200);color:var(--gray-500)">…</div><div><div class="lt">요청 N · 스레드 풀 고갈</div><div class="ld">큐에서 대기 → 지연 폭발 💥</div></div></div>
+          </div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">💡</span><p>대부분의 백엔드는 <strong>CPU가 아니라 I/O 대기</strong>가 병목입니다. "노는 스레드"를 줄이면 같은 자원으로 훨씬 많은 동시 요청을 처리할 수 있습니다. 스레드는 비쌉니다(스택 ~1MB).</p></div>
+      </section>
+
+      <section class="block" id="webflux">
+        <h2 class="section-title reveal">WebFlux (리액티브)</h2>
+        <p class="reveal"><strong>Netty 기반 논블로킹 I/O + 이벤트 루프.</strong> 적은 수의 스레드(보통 CPU 코어 수)가 수많은 요청을 번갈아 처리합니다. I/O는 콜백으로 넘기므로 스레드가 노는 일이 없습니다.</p>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node blue">이벤트 루프<br/>스레드 4개</div>
+            <div class="arrow">⇉<span class="lbl">논블로킹</span></div>
+            <div class="node green">동시 요청<br/>수만 개</div>
+          </div>
+        </div>
+        <h3 class="reveal">Mono와 Flux</h3>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4><code>Mono&lt;T&gt;</code></h4><p style="margin:0;font-size:15px">0~1개 결과를 비동기로 발행 (단건)</p></div>
+          <div class="card flat"><h4><code>Flux&lt;T&gt;</code></h4><p style="margin:0;font-size:15px">0~N개 결과를 비동기로 발행 (스트림)</p></div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">WebFlux Controller</span></div>
+          <pre><code><span class="n">@GetMapping</span>(<span class="s">"/{id}"</span>)
+<span class="k">public</span> <span class="t">Mono</span>&lt;<span class="t">UserProfile</span>&gt; <span class="f">getProfile</span>(<span class="n">@PathVariable</span> <span class="t">Long</span> id) {
+    <span class="t">Mono</span>&lt;<span class="t">User</span>&gt;  user  = repository.<span class="f">findById</span>(id);          <span class="c">// 논블로킹 DB(R2DBC)</span>
+    <span class="t">Mono</span>&lt;<span class="t">Grade</span>&gt; grade = webClient.<span class="f">get</span>().<span class="f">uri</span>(<span class="s">"/grades/"</span>+id)
+                          .<span class="f">retrieve</span>().<span class="f">bodyToMono</span>(<span class="t">Grade</span>.class); <span class="c">// 논블로킹 호출</span>
+
+    <span class="k">return</span> <span class="t">Mono</span>.<span class="f">zip</span>(user, grade)              <span class="c">// 어느 스레드도 블로킹 안 함</span>
+               .<span class="f">map</span>(t -&gt; <span class="k">new</span> <span class="t">UserProfile</span>(t.<span class="f">getT1</span>(), t.<span class="f">getT2</span>()));
+}</code></pre>
+        </div>
+        <h3 class="reveal">백프레셔 (Backpressure) — 리액티브의 진짜 무기</h3>
+        <p class="reveal">생산자가 소비자보다 빠르면 데이터가 쌓여 OOM이 납니다. 리액티브 스트림은 <strong>소비자가 "N개만 더 줘"라고 요청</strong>하는 흐름 제어를 표준으로 지원합니다.</p>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node">Publisher</div>
+            <div class="arrow">→<span class="lbl">request(10)</span></div>
+            <div class="node blue">Subscriber</div>
+          </div>
+          <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:var(--gray-500)">감당할 만큼만 → 대용량 스트리밍을 안전하게</p>
+        </div>
+        <div class="callout danger reveal"><span class="emoji">⚠️</span><p><strong>WebFlux의 함정</strong>: 파이프라인 어딘가에서 <strong>블로킹 코드(JDBC·동기 라이브러리)</strong>를 호출하면 이벤트 루프가 막혀 <strong>전체 성능이 붕괴</strong>합니다. 위에서 아래까지 전부 논블로킹(R2DBC, WebClient)이어야 합니다.</p></div>
+      </section>
+
+      <section class="block" id="coroutine">
+        <h2 class="section-title reveal">Kotlin 코루틴</h2>
+        <p class="reveal"><code>Mono</code>/<code>Flux</code> 체이닝은 강력하지만 <strong>읽기 어렵고 디버깅이 힘듭니다</strong>. 코루틴은 <strong>논블로킹인데 동기 코드처럼 보이게</strong> 씁니다.</p>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">UserController.kt</span></div>
+          <pre><code><span class="c">// suspend: 논블로킹이지만 위에서 아래로 읽히는 평범한 코드처럼</span>
+<span class="n">@GetMapping</span>(<span class="s">"/{id}"</span>)
+<span class="k">suspend fun</span> <span class="f">getProfile</span>(<span class="n">@PathVariable</span> id: <span class="t">Long</span>): <span class="t">UserProfile</span> = <span class="f">coroutineScope</span> {
+    <span class="k">val</span> user  = <span class="f">async</span> { repository.<span class="f">findById</span>(id) }   <span class="c">// 동시에 시작</span>
+    <span class="k">val</span> grade = <span class="f">async</span> { gradeClient.<span class="f">fetch</span>(id) }     <span class="c">// 동시에 시작</span>
+    <span class="t">UserProfile</span>(user.<span class="f">await</span>(), grade.<span class="f">await</span>())       <span class="c">// 둘 다 끝나면 조합</span>
+}</code></pre>
+        </div>
+        <div class="grid c3 reveal">
+          <div class="card flat"><h4>⏸ suspend</h4><p style="margin:0;font-size:14px">중단되면 스레드 반납, 결과 오면 이어서 → 논블로킹</p></div>
+          <div class="card flat"><h4>🌳 구조적 동시성</h4><p style="margin:0;font-size:14px">스코프 자식 작업이 생명주기 공유 → 누수/취소 누락 방지</p></div>
+          <div class="card flat"><h4>🌊 Flow</h4><p style="margin:0;font-size:14px">코루틴 버전의 Flux (백프레셔 지원)</p></div>
+        </div>
+        <div class="callout tip reveal"><span class="emoji">💡</span><p>같은 논블로킹이라도 <strong>Reactor는 함수형 선언적</strong>, <strong>코루틴은 명령형(절차적)</strong>. 코루틴은 콜백 지옥 없이 비동기를 직관적으로 표현합니다.</p></div>
+      </section>
+
+      <section class="block" id="loom">
+        <h2 class="section-title reveal">게임 체인저: 가상 스레드 (Java 21+)</h2>
+        <p class="reveal">Project Loom의 <strong>가상 스레드</strong>는 "블로킹 코드 스타일 그대로 + 높은 동시성"을 가능하게 합니다. 2026년 현재 빼놓을 수 없는 주제입니다.</p>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>🪶 초경량</h4><p style="margin:0;font-size:15px">JVM이 관리, 수십만~수백만 개 생성 가능</p></div>
+          <div class="card flat"><h4>🔄 자동 양보</h4><p style="margin:0;font-size:15px">블로킹(JDBC) 시 OS 스레드를 점유하지 않고 unmount</p></div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">application.yml</span></div>
+          <pre><code><span class="c"># Spring Boot 3.2+ : 한 줄로 가상 스레드 활성화</span>
+spring:
+  threads:
+    virtual:
+      enabled: <span class="k">true</span></code></pre>
+        </div>
+        <div class="callout danger reveal"><span class="emoji">🔥</span><p><strong>판도 변화</strong>: "높은 동시성 = 무조건 WebFlux"라는 공식이 약해졌습니다. <strong>단순 I/O 동시성</strong>만 필요하면 복잡한 리액티브 대신 <strong>MVC + 가상 스레드</strong>가 더 쉬운 선택일 때가 많습니다. 단, <strong>백프레셔가 필요한 스트리밍</strong>은 여전히 리액티브의 영역입니다.</p></div>
+      </section>
+
+      <section class="block" id="compare">
+        <h2 class="section-title reveal">한눈에 비교</h2>
+        <div class="table-wrap reveal">
+          <table>
+            <thead><tr><th>항목</th><th>Spring MVC</th><th>WebFlux</th><th>코루틴</th><th>MVC+가상스레드</th></tr></thead>
+            <tbody>
+              <tr><td>I/O 모델</td><td>블로킹</td><td>논블로킹</td><td>논블로킹</td><td>블로킹(경량)</td></tr>
+              <tr><td>동시성</td><td>풀 한계</td><td>매우 높음</td><td>매우 높음</td><td>매우 높음</td></tr>
+              <tr><td>코드 스타일</td><td>명령형(쉬움)</td><td>선언적(어려움)</td><td>명령형(쉬움)</td><td>명령형(쉬움)</td></tr>
+              <tr><td>백프레셔</td><td>X</td><td><strong>O</strong></td><td><strong>O</strong></td><td>X</td></tr>
+              <tr><td>DB</td><td>JDBC/JPA</td><td>R2DBC</td><td>R2DBC/코루틴</td><td>JDBC/JPA</td></tr>
+              <tr><td>학습 곡선</td><td>낮음</td><td>높음</td><td>중간</td><td>낮음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block" id="decision">
+        <h2 class="section-title reveal">언제 무엇을 쓰나</h2>
+        <div class="vs reveal">
+          <div class="side">
+            <h4 style="color:var(--green)">✅ WebFlux/코루틴이 좋을 때</h4>
+            <ul>
+              <li>동시 연결이 매우 많고 요청마다 <strong>다수의 느린 I/O</strong>(MSA 팬아웃)</li>
+              <li><strong>스트리밍 + 백프레셔</strong> (대용량 데이터, 대규모 SSE)</li>
+              <li>게이트웨이/프록시 등 I/O 중계가 주 업무</li>
+              <li>코루틴: Kotlin 팀 + 가독성 유지</li>
+            </ul>
+          </div>
+          <div class="mid">VS</div>
+          <div class="side">
+            <h4 style="color:var(--red)">🚫 피하는 게 나을 때</h4>
+            <ul>
+              <li>일반 CRUD / 내부 어드민</li>
+              <li>블로킹 라이브러리(JDBC/JPA)가 많음</li>
+              <li><strong>CPU 바운드</strong>가 주력</li>
+              <li>팀 리액티브 숙련도 낮음 → 디버깅 리스크</li>
+            </ul>
+          </div>
+        </div>
+        <div class="diagram reveal">
+          <h4 style="margin-top:0">의사결정 트리</h4>
+          <ol class="steps" style="margin-bottom:0">
+            <li><h4>높은 I/O 동시성이 필요한가?</h4><p style="margin:0">아니오 → <strong>Spring MVC</strong> (단순·검증됨)</p></li>
+            <li><h4>백프레셔/스트리밍이 필요한가?</h4><p style="margin:0">예 → <strong>WebFlux</strong>(Java) 또는 <strong>코루틴 Flow</strong>(Kotlin)</p></li>
+            <li><h4>블로킹 코드를 끝까지 논블로킹으로 바꿀 수 있나?</h4><p style="margin:0">어렵다/팀 미숙 → <strong>MVC + 가상 스레드</strong> (쉬운 고동시성)<br/>가능/이미 리액티브 → <strong>WebFlux 또는 코루틴</strong></p></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="block" id="summary">
+        <h2 class="section-title reveal">핵심 요약</h2>
+        <div class="card reveal">
+          <ul style="margin:0">
+            <li>병목은 보통 <strong>I/O 대기</strong>. Thread-per-request는 "노는 스레드"로 자원 낭비</li>
+            <li><strong>WebFlux</strong>: 이벤트 루프 + Mono/Flux + 백프레셔. 강력하지만 끝까지 논블로킹이어야 하고 어렵다</li>
+            <li><strong>코루틴</strong>: 논블로킹인데 동기처럼 읽힘. Reactor보다 직관적(Kotlin)</li>
+            <li><strong>가상 스레드</strong>: 블로킹 코드 그대로 고동시성 → "고동시성=WebFlux" 공식을 흔듦</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="pager">
+        <a href="async.html"><div class="dir">← 이전</div><div class="ttl">5. 비동기 메시징</div></a>
+        <a class="next" href="guide.html"><div class="dir">다음 →</div><div class="ttl">7. 기술 선택 가이드</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

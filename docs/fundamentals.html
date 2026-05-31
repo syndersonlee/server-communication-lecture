@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>1. 네트워크 기초 · 서버 통신 프로토콜</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">CHAPTER 1</p>
+        <h2 class="section-title reveal">네트워크 기초</h2>
+        <p class="section-lead reveal">"HTTP는 TCP 위에서 돈다"는 말의 의미를, 계층 구조부터 차근차근 풀어봅니다.</p>
+      </section>
+
+      <section class="block" id="layers">
+        <h2 class="section-title reveal">계층 구조: OSI 7 & TCP/IP 4</h2>
+        <p class="reveal">통신은 너무 복잡해서 <strong>역할을 계층으로 분리</strong>합니다. 각 계층은 아래 계층의 기능만 사용합니다. 백엔드 개발자는 주로 <strong>Application</strong>과 <strong>Transport</strong> 계층을 다룹니다.</p>
+        <div class="diagram reveal">
+          <div class="layer-stack">
+            <div class="layer hl"><div class="ln">App</div><div><div class="lt">Application (7·6·5)</div><div class="ld">HTTP, WebSocket, gRPC, DNS — 우리가 코드로 다루는 영역</div></div></div>
+            <div class="layer hl"><div class="ln">L4</div><div><div class="lt">Transport (4)</div><div class="ld">TCP, UDP, QUIC — 포트, 신뢰성, 흐름제어</div></div></div>
+            <div class="layer"><div class="ln">L3</div><div><div class="lt">Internet (3)</div><div class="ld">IP, ICMP — IP 주소, 라우팅</div></div></div>
+            <div class="layer"><div class="ln">L2</div><div><div class="lt">Network Access (2·1)</div><div class="ld">Ethernet, Wi-Fi, MAC</div></div></div>
+          </div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">💡</span><p>데이터는 각 계층을 내려가며 <strong>헤더가 붙고(캡슐화)</strong>, 받는 쪽에서 역순으로 벗겨집니다.</p></div>
+      </section>
+
+      <section class="block" id="tcp-udp">
+        <h2 class="section-title reveal">TCP vs UDP</h2>
+        <p class="reveal">전송 계층의 두 주인공. 거의 모든 상위 프로토콜이 이 둘 위에서 동작합니다.</p>
+        <div class="vs reveal">
+          <div class="side">
+            <h4>🤝 TCP <span class="badge">연결형</span></h4>
+            <ul>
+              <li>3-way handshake로 연결 수립</li>
+              <li><strong>신뢰성 보장</strong>: 순서·재전송·흐름/혼잡제어</li>
+              <li>바이트 스트림 (메시지 경계 직접 관리)</li>
+              <li>HTTP, WebSocket, gRPC, DB 연결</li>
+            </ul>
+          </div>
+          <div class="mid">VS</div>
+          <div class="side">
+            <h4>🚀 UDP <span class="badge">비연결형</span></h4>
+            <ul>
+              <li>핸드셰이크 없음 → 지연 적음</li>
+              <li><strong>신뢰성 미보장</strong>: 그냥 던짐</li>
+              <li>데이터그램 단위, 헤더 8byte로 가벼움</li>
+              <li>DNS, 영상 스트리밍, 게임, QUIC(HTTP/3)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p><strong>"TCP는 바이트 스트림"</strong> — <code>send("AB")</code>, <code>send("CD")</code>를 두 번 호출해도 받는 쪽은 <code>"ABCD"</code>로 한 번에 받을 수 있습니다. 그래서 <code>Content-Length</code> 같은 경계 표시가 필요합니다.</p></div>
+      </section>
+
+      <section class="block" id="handshake">
+        <h2 class="section-title reveal">3-way Handshake</h2>
+        <p class="reveal">TCP는 연결을 맺기 위해 3번의 왕복을 합니다. 그래서 연결 수립은 <strong>비쌉니다</strong>.</p>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node blue">Client</div>
+            <div class="arrow">①→<span class="lbl">SYN</span></div>
+            <div class="node">Server</div>
+            <div class="arrow">←②<span class="lbl">SYN+ACK</span></div>
+            <div class="node blue">Client</div>
+            <div class="arrow">③→<span class="lbl">ACK</span></div>
+            <div class="node green">연결!</div>
+          </div>
+        </div>
+        <div class="callout tip reveal"><span class="emoji">💡</span><p>매 요청마다 핸드셰이크를 하면 비싸므로, HTTP/1.1의 <strong>Keep-Alive</strong>, 커넥션 풀 같은 <strong>"연결 재사용"</strong> 기법이 등장합니다.</p></div>
+      </section>
+
+      <section class="block" id="socket">
+        <h2 class="section-title reveal">소켓과 BIO / NIO</h2>
+        <p class="reveal"><strong>소켓 = IP + Port</strong>. 모든 상위 프로토콜의 토대입니다. 서버가 연결을 처리하는 두 가지 방식이 이후 WebFlux 이야기로 이어집니다.</p>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">EchoServer.java</span></div>
+          <pre><code><span class="c">// 가장 원시적인 TCP 서버 (Spring 톰캣도 결국 이 위에서 동작)</span>
+<span class="k">try</span> (<span class="t">ServerSocket</span> server = <span class="k">new</span> <span class="t">ServerSocket</span>(<span class="n">8080</span>)) {
+    <span class="k">while</span> (<span class="k">true</span>) {
+        <span class="t">Socket</span> client = server.<span class="f">accept</span>();  <span class="c">// 연결 올 때까지 블로킹</span>
+        <span class="c">// ... 읽고 응답 ...</span>
+    }
+}</code></pre>
+        </div>
+        <div class="vs reveal">
+          <div class="side">
+            <h4>BIO (Blocking)</h4>
+            <ul><li>연결 1개 = 스레드 1개</li><li>동시 연결 1만 → 스레드 1만 → 메모리 폭발</li><li>전통적 Spring MVC</li></ul>
+          </div>
+          <div class="mid">VS</div>
+          <div class="side">
+            <h4>NIO (Non-blocking)</h4>
+            <ul><li>적은 스레드로 많은 연결 (Selector/멀티플렉싱)</li><li>Netty · WebFlux의 기반</li><li><a href="webflux.html">6장</a>에서 자세히</li></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="summary">
+        <h2 class="section-title reveal">핵심 요약</h2>
+        <div class="card reveal">
+          <ul style="margin:0">
+            <li>통신은 <strong>계층 구조</strong>로 분리 — 백엔드는 Application + Transport 집중</li>
+            <li><strong>TCP</strong>(신뢰성·연결형) vs <strong>UDP</strong>(빠름·비연결형)</li>
+            <li>연결 수립(3-way handshake)은 비싸다 → <strong>연결 재사용</strong>이 중요</li>
+            <li><strong>소켓 = IP+Port</strong>, BIO/NIO 차이가 대규모 동시성의 핵심</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="pager">
+        <a href="index.html"><div class="dir">← 이전</div><div class="ttl">0. 오리엔테이션</div></a>
+        <a class="next" href="http.html"><div class="dir">다음 →</div><div class="ttl">2. HTTP & HTTPS</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>
