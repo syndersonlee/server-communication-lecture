@@ -142,6 +142,45 @@
           <div class="card flat"><h4>💓 TCP keepalive vs HTTP keep-alive</h4><p style="margin:0;font-size:14px">이름은 비슷하지만 다름 — <strong>TCP keepalive</strong>(SO_KEEPALIVE)는 죽은 연결 감지용, <strong>HTTP Keep-Alive</strong>는 연결 재사용용.</p></div>
           <div class="card flat"><h4>⚡ Nagle / TCP_NODELAY</h4><p style="margin:0;font-size:14px">작은 패킷을 모아 보내는 Nagle 알고리즘이 지연을 유발할 수 있음. 저지연 실시간 통신은 <code>TCP_NODELAY</code>로 끔.</p></div>
         </div>
+
+        <h3 class="reveal">⑥ 실전 예시: 은행 "전문(電文)" 통신</h3>
+        <p class="reveal">우리가 매일 쓰는 HTTP가 아니라, <strong>raw TCP 소켓 위에서 직접 메시지를 주고받는</strong> 대표적인 현업 사례가 바로 <strong>금융권의 전문(電文, message) 통신</strong>입니다. 은행 ↔ 금융결제원, 카드사 ↔ VAN, 펌뱅킹, ATM/CD기, 증권 시세/주문 등 상당수가 이 방식입니다.</p>
+        <p class="reveal"><strong>전문</strong>이란 송수신 양측이 미리 약속한 규격의 메시지입니다. 보통 <strong>고정 길이(fixed-length)</strong>이거나 <strong>길이 헤더 + 바디</strong> 구조이고, 각 필드의 <strong>시작 위치와 길이가 명세로 고정</strong>되어 있습니다(카드 결제는 국제표준 <code>ISO 8583</code>이 대표적).</p>
+
+        <div class="diagram reveal">
+          <h4 style="margin-top:0">전형적인 전문 구조 (길이 헤더 + 바디)</h4>
+          <div class="layer-stack">
+            <div class="layer hl"><div class="ln" style="background:var(--blue-50);color:var(--blue-dark)">LEN</div><div><div class="lt">길이부 (예: 4 byte)</div><div class="ld">바디 전체 길이 — TCP 바이트 스트림에서 "여기까지가 한 전문"을 알려주는 경계</div></div></div>
+            <div class="layer"><div class="ln" style="background:#e6f9f0;color:#05875b">HEAD</div><div><div class="lt">공통부 (헤더)</div><div class="ld">전문구분코드 · 송수신 기관코드 · 전문일시 · 일련번호(응답 매칭용) · 응답코드</div></div></div>
+            <div class="layer"><div class="ln" style="background:var(--amber-bg);color:#9a5b00">BODY</div><div><div class="lt">개별부 (바디)</div><div class="ld">업무별 데이터 — 계좌번호(20) · 금액(13) · 거래구분(2) … 위치·길이 고정</div></div></div>
+          </div>
+        </div>
+
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">전문 수신 — 길이부로 경계 잡기</span></div>
+          <pre><code><span class="t">DataInputStream</span> in = <span class="k">new</span> <span class="t">DataInputStream</span>(socket.<span class="f">getInputStream</span>());
+
+<span class="k">while</span> (<span class="k">true</span>) {
+    <span class="c">// ① 앞 4바이트 = 전문 길이 (ASCII 숫자, 예: "0058")</span>
+    <span class="t">byte</span>[] lenBuf = in.<span class="f">readNBytes</span>(<span class="n">4</span>);
+    <span class="t">int</span> len = <span class="t">Integer</span>.<span class="f">parseInt</span>(<span class="k">new</span> <span class="t">String</span>(lenBuf, <span class="s">"EUC-KR"</span>));
+
+    <span class="c">// ② 길이만큼 "정확히" 읽어야 한 전문이 완성됨 (★ 핵심)</span>
+    <span class="t">byte</span>[] body = in.<span class="f">readNBytes</span>(len);
+
+    <span class="c">// ③ 약속된 위치/길이로 필드 파싱</span>
+    <span class="t">Telegram</span> msg = <span class="f">parseFixedLength</span>(body);
+    <span class="f">dispatch</span>(msg.<span class="f">getSeqNo</span>(), msg);   <span class="c">// 일련번호로 요청-응답 매칭</span>
+}</code></pre>
+        </div>
+
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p><strong>왜 길이부가 필수인가</strong> — 앞서 본 <em>"TCP는 바이트 스트림"</em> 때문입니다. 전문 2개를 연속으로 보내면 수신 측엔 <code>"전문1전문2"</code>가 한 덩어리로 도착하거나, 전문 하나가 여러 번에 쪼개져 올 수 있습니다. 그래서 <strong>길이부(또는 고정 길이)로 경계를 직접 잘라내야</strong> 합니다. <code>read()</code> 한 번 = 전문 한 개라고 가정하면 반드시 깨집니다.</p></div>
+
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>🤔 왜 HTTP가 아니라 TCP 전문인가</h4><p style="margin:0;font-size:14px">초저지연·고TPS, 수십 년 된 <strong>금융 표준/레거시</strong>, 전용 금융망(VAN) 위 동작, HTTP 오버헤드 없이 <strong>상시 연결</strong> 유지가 필요하기 때문.</p></div>
+          <div class="card flat"><h4>🔧 실무에서 챙기는 것</h4><p style="margin:0;font-size:14px"><strong>상시 연결 유지</strong> + 주기적 <strong>heartbeat 전문</strong>, 끊기면 <strong>자동 재접속</strong>, 일련번호로 <strong>요청-응답 매칭</strong>, 인코딩(EUC-KR) 주의.</p></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p>정리하면 — <strong>전문 통신 = TCP 소켓(전송) + 고정 규격 메시지(경계·필드 약속)</strong>. "신뢰성 있는 바이트 스트림" 위에 "업무 메시지 프레이밍"을 직접 얹은, TCP의 가장 날것(raw)에 가까운 활용입니다.</p></div>
       </section>
 
       <section class="block" id="socket">
