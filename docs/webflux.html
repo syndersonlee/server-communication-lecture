@@ -176,6 +176,11 @@ spring:
 
       <section class="block" id="errors">
         <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <a class="ts-cta reveal" href="ts-infra.html#blocking">
+          <span class="ic">🛟</span>
+          <span class="tx"><span class="tt">에러별 대형 다이어그램으로 자세히 보기</span><span class="ds">블로킹 호출·subscribe 누락·스택트레이스·백프레셔·컨텍스트 유실을 크게 분석</span></span>
+          <span class="go">트러블슈팅 →</span>
+        </a>
         <div class="errcase reveal">
           <span class="sig">갑자기 전체 응답이 느려지고 처리량 급락</span>
           <div class="row"><span class="lab cause">원인</span><p>이벤트 루프 스레드에서 <strong>블로킹 호출</strong>(JDBC, 동기 SDK, <code>Thread.sleep</code>) 발생 → 소수의 루프 스레드가 막힘.</p></div>

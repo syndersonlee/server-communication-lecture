@@ -350,6 +350,88 @@ p code, li code, td code {
 .errcase.warn-amber { border-left-color: var(--amber); }
 .errcase.warn-amber .sig { color: #9a5b00; background: var(--amber-bg); }
 
+/* ============================================================
+   Troubleshooting — large per-error blocks with big diagrams
+   ============================================================ */
+.ts-hero { background: linear-gradient(135deg, #fff5f5, #fff); border: 1px solid var(--gray-100); border-radius: var(--radius); padding: 28px 30px; margin: 8px 0 10px; }
+.ts-hero h3 { margin: 0 0 6px; }
+
+.tcase { margin: 0; padding: 48px 0; border-top: 2px dashed var(--gray-200); scroll-margin-top: 90px; }
+.tcase:first-of-type { border-top: none; padding-top: 12px; }
+.tcase .sev { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; letter-spacing: .04em; padding: 5px 12px; border-radius: 100px; text-transform: uppercase; }
+.sev.crit { background: var(--red-bg); color: #b42318; }
+.sev.warn { background: var(--amber-bg); color: #9a5b00; }
+.sev.info { background: var(--blue-50); color: var(--blue-dark); }
+.tcase h2.ttitle { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--gray-900); margin: 14px 0 6px; }
+.tcase .tsig { display: inline-block; font-family: var(--mono); font-size: 14px; font-weight: 700; color: #b42318; background: var(--red-bg); padding: 6px 12px; border-radius: 8px; margin: 4px 0 18px; }
+.tcase .tlede { font-size: 17px; color: var(--gray-600); margin: 0 0 22px; }
+
+/* Big stage / before-after diagram */
+.stage { background:
+    radial-gradient(700px 240px at 50% -20%, rgba(49,130,246,.08), transparent 70%), var(--gray-50);
+  border: 1px solid var(--gray-100); border-radius: var(--radius); padding: 30px 24px; margin: 18px 0; }
+.stage .stitle { text-align: center; font-size: 13px; font-weight: 800; letter-spacing: .05em; color: var(--gray-500); margin-bottom: 20px; text-transform: uppercase; }
+.ba { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.ba .lane { border-radius: var(--radius-sm); padding: 22px 18px 18px; position: relative; }
+.ba .lane.before { background: #fff5f5; border: 1.5px solid #ffd5d5; }
+.ba .lane.after  { background: #f0fdf6; border: 1.5px solid #c4f0d8; }
+.ba .lane .tag-lane { position: absolute; top: -12px; left: 18px; font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 100px; }
+.ba .lane.before .tag-lane { background: var(--red); color: #fff; }
+.ba .lane.after  .tag-lane { background: var(--green); color: #fff; }
+
+.bigflow { display: flex; align-items: stretch; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.bignode { background: var(--white); border: 1.5px solid var(--gray-200); border-radius: 14px; padding: 16px 18px; min-width: 96px; text-align: center; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.bignode .bic { font-size: 26px; line-height: 1; }
+.bignode .bl { font-size: 13.5px; font-weight: 700; color: var(--gray-800); }
+.bignode .bs { font-size: 11.5px; color: var(--gray-500); }
+.bignode.bad { border-color: #f5a3a3; background: #fff; }
+.bignode.bad .bl { color: #b42318; }
+.bignode.good { border-color: #86dfb0; }
+.bignode.good .bl { color: #05875b; }
+.bignode.dim { opacity: .5; }
+.bignode.accent { border-color: var(--blue); background: var(--blue-50); }
+
+.bigarrow { align-self: center; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--gray-400); font-size: 26px; font-weight: 800; min-width: 44px; }
+.bigarrow .albl { font-size: 11px; font-weight: 700; color: var(--gray-500); margin-top: 2px; white-space: nowrap; }
+.bigarrow.bad { color: var(--red); }
+.bigarrow.bad .albl { color: var(--red); }
+.bigarrow.good { color: var(--green); }
+.bigarrow.good .albl { color: var(--green); }
+
+.boom { font-size: 30px; }
+
+/* Symptom / Cause / Diagnose / Fix grid */
+.tgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0; }
+@media (max-width: 760px){ .tgrid { grid-template-columns: 1fr; } .bignode { min-width: 78px; padding: 12px; } }
+.tbox { border: 1px solid var(--gray-100); border-radius: var(--radius-sm); padding: 18px 20px; background: var(--white); box-shadow: var(--shadow-sm); }
+.tbox .th { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 15px; margin-bottom: 10px; }
+.tbox .th .em { font-size: 18px; }
+.tbox.symptom .th { color: var(--gray-800); }
+.tbox.cause .th { color: #9a5b00; }
+.tbox.diagnose .th { color: var(--blue-dark); }
+.tbox.fix { border-color: #c4f0d8; background: #f6fdf9; }
+.tbox.fix .th { color: #05875b; }
+.tbox ul { padding-left: 18px; margin: 0; }
+.tbox li { font-size: 14.5px; margin-bottom: 7px; }
+.tbox p { font-size: 14.5px; margin: 0; }
+
+.fixsteps { counter-reset: fs; list-style: none; padding: 0; margin: 0; }
+.fixsteps li { position: relative; padding: 0 0 12px 34px; font-size: 14.5px; color: var(--gray-700); }
+.fixsteps li:last-child { padding-bottom: 0; }
+.fixsteps li::before { counter-increment: fs; content: counter(fs); position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+
+.prevent { display: flex; gap: 12px; align-items: flex-start; background: var(--blue-50); border-radius: var(--radius-sm); padding: 14px 18px; margin-top: 14px; font-size: 14.5px; color: #1b4fa0; }
+.prevent .em { font-size: 18px; }
+
+/* CTA to deep-dive troubleshooting page */
+.ts-cta { display: flex; align-items: center; gap: 16px; background: linear-gradient(135deg, #eef4ff, #fff); border: 1px solid var(--blue-100, #d6e4ff); border-radius: var(--radius); padding: 18px 22px; margin: 6px 0 22px; text-decoration: none; transition: box-shadow .15s, transform .15s; }
+.ts-cta:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+.ts-cta .ic { font-size: 28px; }
+.ts-cta .tx { flex: 1; }
+.ts-cta .tt { font-weight: 800; color: var(--gray-900); font-size: 15.5px; }
+.ts-cta .ds { font-size: 13.5px; color: var(--gray-600); margin-top: 2px; }
+.ts-cta .go { font-weight: 800; color: var(--blue-dark); white-space: nowrap; }
+
 /* ===== Mini meta row for chapter time ===== */
 .metarow { display: flex; gap: 18px; flex-wrap: wrap; margin: 14px 0 0; font-size: 13.5px; color: var(--gray-500); }
 .metarow span { display: inline-flex; align-items: center; gap: 6px; }

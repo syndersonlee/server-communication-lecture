@@ -120,6 +120,11 @@ docker run -d --name kafka -p 9092:9092 apache/kafka:latest</code></pre>
 
       <section class="block" id="errors">
         <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <a class="ts-cta reveal" href="ts-async.html">
+          <span class="ic">🛟</span>
+          <span class="tx"><span class="tt">에러별 대형 다이어그램으로 자세히 보기</span><span class="ds">컨슈머 랙·중복·리밸런스·독성 메시지·순서·아웃박스를 크게 분석</span></span>
+          <span class="go">트러블슈팅 →</span>
+        </a>
         <div class="errcase reveal warn-amber">
           <span class="sig">Consumer Lag 폭증 (소비가 생산을 못 따라감)</span>
           <div class="row"><span class="lab cause">원인</span><p>컨슈머 처리 속도 < 생산 속도. 무거운 처리, 파티션 부족.</p></div>

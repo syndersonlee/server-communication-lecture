@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>비동기 메시징 에러 대응 · 트러블슈팅</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">TROUBLESHOOTING · MESSAGING</p>
+        <h2 class="section-title reveal">비동기 메시징 에러 대응</h2>
+        <p class="section-lead reveal">Kafka·RabbitMQ 운영의 핵심 난제 — 지연, 중복, 순서, 정합성.</p>
+      </section>
+
+      <!-- consumer lag -->
+      <section class="tcase" id="lag">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">컨슈머 랙(Consumer Lag) 폭증</h2>
+        <div class="tsig">생산 속도 ≫ 소비 속도 → 처리 지연 누적</div>
+        <p class="tlede">컨슈머가 생산을 못 따라가 메시지가 큐에 쌓이고, 실시간성이 무너집니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">처리량 확장</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🏭</span><span class="bl">Producer</span><span class="bs">10k/s</span></div>
+                <div class="bigarrow bad">⇉</div>
+                <div class="bignode bad"><span class="bic">📚</span><span class="bl">Topic</span><span class="bs">lag↑</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🐌</span><span class="bl">Consumer 1</span><span class="bs">2k/s</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 단일/느린 컨슈머가 병목 → 랙 무한 증가</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">📚</span><span class="bl">Topic</span><span class="bs">파티션↑</span></div>
+                <div class="bigarrow good">⇉<span class="albl">분산</span></div>
+                <div class="bignode good"><span class="bic">👥</span><span class="bl">Consumer x5</span><span class="bs">병렬</span></div>
+                <div class="bigarrow good">⚡</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">lag 해소</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 파티션·컨슈머 확장 + 처리 최적화(배치/비동기)</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>lag 지표 지속 증가</li><li>이벤트 반영 지연</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>컨슈머 수 부족/느린 처리</li><li>파티션 수 한계</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>consumer group lag 모니터(AKHQ)</li><li>처리 시간 프로파일</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>파티션 수 ≥ 컨슈머 수로 확장</li>
+              <li>처리 로직 최적화(배치/비동기 I/O)</li>
+              <li>무거운 작업은 별도 토픽 분리</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — lag 알람 + 오토스케일, 파티션 설계 시 향후 확장 여유.</div></div>
+      </section>
+
+      <!-- duplicate -->
+      <section class="tcase" id="duplicate">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">메시지 중복 소비</h2>
+        <div class="tsig">at-least-once 전달 → 같은 메시지 2번 처리</div>
+        <p class="tlede">대부분의 브로커는 최소 1회 전달을 보장하므로, 컨슈머는 중복을 가정하고 멱등하게 처리해야 합니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">멱등 소비</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">📨</span><span class="bl">msg #42</span></div>
+                <div class="bigarrow bad">🔁<span class="albl">재전달</span></div>
+                <div class="bignode bad"><span class="bic">⚙️</span><span class="bl">컨슈머</span><span class="bs">그대로 처리</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">💸</span><span class="bl">중복 효과</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 커밋 전 재시작/재밸런스로 같은 메시지 재처리</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">📨</span><span class="bl">msg #42</span></div>
+                <div class="bigarrow good">→<span class="albl">messageId</span></div>
+                <div class="bignode good"><span class="bic">🗝️</span><span class="bl">처리 여부 확인</span></div>
+                <div class="bigarrow good">🔁<span class="albl">이미 처리</span></div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">스킵</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ messageId 기록 + 멱등 처리(upsert/유니크 제약)</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>중복 알림/중복 적립</li><li>재배포·재밸런스 직후 증가</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>at-least-once 전달</li><li>오프셋 커밋 타이밍</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>중복 처리 로그/카운트</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>고유 messageId로 처리 여부 기록</li>
+              <li>upsert·DB 유니크 제약으로 멱등화</li>
+              <li>가능하면 정확히 1회 시맨틱 활용</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — "컨슈머는 항상 멱등"을 설계 규칙으로 고정.</div></div>
+      </section>
+
+      <!-- rebalance / commit fail -->
+      <section class="tcase" id="rebalance">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">리밸런스 / CommitFailedException</h2>
+        <div class="tsig">CommitFailedException: ... rebalanced and assigned the partitions to another member</div>
+        <p class="tlede">한 메시지 처리에 너무 오래 걸려(<code>max.poll.interval.ms</code> 초과) 컨슈머가 그룹에서 추방되고 리밸런스가 발생합니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">poll 주기 유지</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">⚙️</span><span class="bl">컨슈머</span><span class="bs">처리 6분</span></div>
+                <div class="bigarrow bad">⏳<span class="albl">poll 멈춤</span></div>
+                <div class="bignode bad"><span class="bic">⛓️‍💥</span><span class="bl">추방</span></div>
+                <div class="bigarrow bad">↻</div>
+                <div class="bignode bad"><span class="bic">🔄</span><span class="bl">리밸런스 폭풍</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 긴 처리 → 그룹 추방 → 커밋 실패 → 무한 재처리</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">📦</span><span class="bl">배치 축소</span><span class="bs">max.poll.records↓</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">⚙️</span><span class="bl">짧게 처리</span></div>
+                <div class="bigarrow good">→<span class="albl">또는 분리</span></div>
+                <div class="bignode accent"><span class="bic">🧵</span><span class="bl">무거운 작업 별도 처리</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 한 번에 적게 가져오고 빠르게 처리, 장시간 작업은 분리</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>CommitFailedException 반복</li><li>잦은 리밸런스 로그</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>한 배치 처리 시간 &gt; max.poll.interval</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>배치당 처리 시간 측정</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li><code>max.poll.records</code> 줄이기</li>
+              <li><code>max.poll.interval.ms</code> 상향(신중히)</li>
+              <li>장시간 작업은 별도 스레드/큐로 분리</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 컨슈머 처리 시간을 짧고 일정하게 유지하도록 설계.</div></div>
+      </section>
+
+      <!-- poison / DLQ -->
+      <section class="tcase" id="poison">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">독성 메시지(Poison Message) 무한 재시도</h2>
+        <div class="tsig">파싱/처리 불가 메시지가 계속 실패 → 컨슈머 정체</div>
+        <p class="tlede">처리할 수 없는 한 건이 오프셋 진행을 막아 뒤따르는 모든 메시지를 멈춥니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">DLQ로 격리</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">☠️</span><span class="bl">독성 메시지</span></div>
+                <div class="bigarrow bad">🔁<span class="albl">무한 재시도</span></div>
+                <div class="bignode bad"><span class="bic">⚙️</span><span class="bl">컨슈머 멈춤</span></div>
+                <div class="bigarrow bad">⛔</div>
+                <div class="bignode bad"><span class="bic">🧱</span><span class="bl">뒤 메시지 정체</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 한 건이 전체 파티션 진행을 막음</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">☠️</span><span class="bl">독성 메시지</span></div>
+                <div class="bigarrow good">→<span class="albl">N회 실패</span></div>
+                <div class="bignode accent"><span class="bic">🗄️</span><span class="bl">DLQ로 이동</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">정상 흐름 지속</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 재시도 한도 초과 시 DLQ로 격리 후 별도 분석</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>같은 메시지 에러 반복</li><li>특정 파티션 진행 정지</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>역직렬화/검증 실패</li><li>재시도 한도·DLQ 부재</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>반복 실패 메시지 식별</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>재시도 한도 + DLQ 라우팅</li>
+              <li>DLQ 메시지 분석·수정 후 재처리</li>
+              <li>스키마 검증으로 사전 차단</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — Schema Registry로 호환성 강제, DLQ 적재 알람.</div></div>
+      </section>
+
+      <!-- ordering -->
+      <section class="tcase" id="ordering">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">메시지 순서 보장 실패</h2>
+        <div class="tsig">생성→수정→삭제가 뒤섞여 처리</div>
+        <p class="tlede">파티션이 여러 개면 전역 순서는 보장되지 않습니다. 같은 엔티티 이벤트가 다른 파티션으로 흩어질 수 있습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">키 기반 파티셔닝</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🆔</span><span class="bl">order#7 이벤트</span><span class="bs">키 없음</span></div>
+                <div class="bigarrow bad">⇉<span class="albl">랜덤 분배</span></div>
+                <div class="bignode bad"><span class="bic">📑</span><span class="bl">P0·P1·P2</span></div>
+                <div class="bigarrow bad">↯</div>
+                <div class="bignode bad"><span class="bic">🔀</span><span class="bl">순서 뒤섞임</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 같은 주문 이벤트가 여러 파티션으로 → 순서 깨짐</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🆔</span><span class="bl">order#7</span><span class="bs">key=orderId</span></div>
+                <div class="bigarrow good">→<span class="albl">해시</span></div>
+                <div class="bignode good"><span class="bic">📑</span><span class="bl">항상 P1</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">순서 보장</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 같은 키는 같은 파티션 → 파티션 내 순서 유지</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>상태가 과거 값으로 덮임</li><li>삭제 후 생성처럼 보임</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>키 없는 라운드로빈 분배</li><li>다중 파티션 병렬 소비</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>같은 엔티티 이벤트의 파티션 분포 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>엔티티 ID를 메시지 키로 → 동일 파티션</li>
+              <li>버전/타임스탬프로 역전 무시</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 순서가 필요한 도메인은 키 전략을 계약으로 명문화.</div></div>
+      </section>
+
+      <!-- outbox -->
+      <section class="tcase" id="outbox">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">DB 커밋과 메시지 발행 불일치</h2>
+        <div class="tsig">DB는 저장됐는데 메시지는 유실 (또는 반대)</div>
+        <p class="tlede">DB 트랜잭션과 브로커 발행은 서로 다른 시스템이라 원자적이지 않습니다. 둘 사이에 장애가 나면 정합성이 깨집니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">Transactional Outbox</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">💾</span><span class="bl">DB commit</span></div>
+                <div class="bigarrow bad">→<span class="albl">그 직후 크래시</span></div>
+                <div class="bignode bad"><span class="bic">📮</span><span class="bl">발행 못함</span></div>
+                <div class="bigarrow bad">✗</div>
+                <div class="bignode bad"><span class="bic">🕳️</span><span class="bl">이벤트 유실</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 저장과 발행 사이 장애 → 불일치</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">💾</span><span class="bl">DB + outbox</span><span class="bs">같은 트랜잭션</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode accent"><span class="bic">📤</span><span class="bl">릴레이/CDC</span></div>
+                <div class="bigarrow good">→<span class="albl">재시도 보장</span></div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">브로커 발행</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 이벤트를 같은 트랜잭션에 outbox로 저장 후 별도 발행</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>주문은 있는데 알림/후속 이벤트 없음</li><li>또는 이벤트만 있고 데이터 없음</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>DB·브로커 이중 쓰기(dual write)</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>데이터-이벤트 정합성 대사(reconcile)</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>Transactional Outbox 패턴 도입</li>
+              <li>릴레이/CDC(Debezium)로 발행</li>
+              <li>컨슈머는 멱등 처리</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — "DB와 브로커 동시 쓰기 금지"를 원칙으로, outbox를 표준화.</div></div>
+      </section>
+
+      <div class="pager">
+        <a href="ts-rpc-graphql.html"><div class="dir">← 이전 트러블슈팅</div><div class="ttl">gRPC·GraphQL 에러</div></a>
+        <a class="next" href="ts-infra.html"><div class="dir">다음 트러블슈팅 →</div><div class="ttl">네트워크·WebFlux 에러</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>네트워크·WebFlux 에러 대응 · 트러블슈팅</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">TROUBLESHOOTING · NETWORK / WEBFLUX</p>
+        <h2 class="section-title reveal">네트워크 · WebFlux 에러 대응</h2>
+        <p class="section-lead reveal">가장 밑단의 TCP 문제부터, 리액티브 스택 특유의 함정까지.</p>
+      </section>
+
+      <!-- refused -->
+      <section class="tcase" id="refused">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">Connection refused</h2>
+        <div class="tsig">java.net.ConnectException: Connection refused</div>
+        <p class="tlede">대상 host:port에서 아무도 듣고 있지 않습니다. 서버 미기동·포트 오류·방화벽이 원인입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">도달 가능성 점검</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🖥️</span><span class="bl">Client</span></div>
+                <div class="bigarrow bad">→<span class="albl">SYN</span></div>
+                <div class="bignode bad"><span class="bic">🔌</span><span class="bl">host:8080</span><span class="bs">리스너 없음</span></div>
+                <div class="bigarrow bad">↩<span class="albl">RST</span></div>
+                <div class="bignode bad"><span class="bic">⛔</span><span class="bl">refused</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 포트에 프로세스가 없거나 다른 포트로 떠 있음</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🔎</span><span class="bl">포트/주소 확인</span><span class="bs">lsof·nc</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🚀</span><span class="bl">서버 기동</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">연결 성공</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 올바른 host:port + 리스너 기동 + 방화벽 허용</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>연결 즉시 실패(빠른 거부)</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>서버 미기동/다른 포트</li><li>방화벽·보안그룹 차단</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>lsof -i :포트</code>, <code>nc -vz host port</code></li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>대상 포트/주소 재확인</li>
+              <li>서버 기동·바인딩 주소(0.0.0.0) 확인</li>
+              <li>방화벽/보안그룹 인바운드 허용</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 서비스 디스커버리/헬스체크로 대상 유효성 자동 검증.</div></div>
+      </section>
+
+      <!-- timeout -->
+      <section class="tcase" id="conn-timeout">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">Connection timed out</h2>
+        <div class="tsig">java.net.SocketTimeoutException: connect/read timed out</div>
+        <p class="tlede">refused와 달리 <b>응답 자체가 없습니다</b>. 패킷이 어딘가에서 삼켜지는 경우로, 보통 네트워크/방화벽 drop입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">refused vs timeout</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🖥️</span><span class="bl">Client</span></div>
+                <div class="bigarrow bad">→<span class="albl">SYN</span></div>
+                <div class="bignode bad"><span class="bic">🧱</span><span class="bl">방화벽 drop</span><span class="bs">응답 없음</span></div>
+                <div class="bigarrow bad">⏳<span class="albl">무한 대기</span></div>
+                <div class="bignode bad"><span class="bic">⌛</span><span class="bl">timeout</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 RST도 없이 침묵 → 클라가 오래 매달림</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">⏱️</span><span class="bl">connect/read timeout</span><span class="bs">짧게</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🛣️</span><span class="bl">경로/보안그룹 수정</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">정상 또는 빠른 실패</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 타임아웃 명시 + 경로/보안그룹 교정</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>오래 매달린 뒤 timeout</li><li>특정 네트워크 구간에서만 발생</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>방화벽/보안그룹 패킷 drop</li><li>라우팅 오류, 과부하</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>ping</code>·<code>traceroute</code>로 경로 확인</li><li><code>tcpdump</code>로 SYN/응답 관찰</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>connect/read timeout을 반드시 설정</li>
+              <li>보안그룹·방화벽 규칙 교정</li>
+              <li>재시도+백오프(멱등 한정)</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 기본 무한 타임아웃 금지, 경로 변경 시 연결성 테스트.</div></div>
+      </section>
+
+      <!-- TIME_WAIT -->
+      <section class="tcase" id="timewait">
+        <span class="sev info">🔵 Info</span>
+        <h2 class="ttitle">TIME_WAIT 소켓 폭증 / 포트 고갈</h2>
+        <div class="tsig">대량 단기 연결로 TIME_WAIT 누적 → 연결 실패</div>
+        <p class="tlede">매 요청마다 새 연결을 맺고 끊으면, 종료한 소켓이 TIME_WAIT로 남아 임시 포트를 소진합니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">커넥션 재사용</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🔁</span><span class="bl">매 요청 새 연결</span></div>
+                <div class="bigarrow bad">→<span class="albl">즉시 close</span></div>
+                <div class="bignode bad"><span class="bic">🧟</span><span class="bl">TIME_WAIT 수만</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🚫</span><span class="bl">포트 고갈</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 연결 재사용 없이 폭발적 생성/종료</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">♻️</span><span class="bl">커넥션 풀</span><span class="bs">keep-alive</span></div>
+                <div class="bigarrow good">→<span class="albl">재사용</span></div>
+                <div class="bignode good"><span class="bic">🔌</span><span class="bl">소수의 연결</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">안정</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 커넥션 풀 + keep-alive로 재사용</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>부하 시 connect 실패</li><li>TIME_WAIT 수만 개</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>연결 재사용 없음</li><li>임시 포트 범위 소진</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>netstat/ss</code>로 TIME_WAIT 수 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>HTTP 클라이언트 커넥션 풀 + keep-alive</li>
+              <li>임시 포트 범위/재사용 커널 튜닝</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 공용 WebClient/RestClient 빈으로 풀을 공유, 요청마다 새 클라 생성 금지.</div></div>
+      </section>
+
+      <!-- blocking in event loop -->
+      <section class="tcase" id="blocking">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">이벤트 루프에서 블로킹 호출</h2>
+        <div class="tsig">WebFlux인데 처리량이 안 나오고 지연 폭증</div>
+        <p class="tlede">소수의 이벤트 루프 스레드에서 블로킹 코드(JDBC, Thread.sleep 등)를 호출하면 전체 처리량이 붕괴됩니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">루프 보호</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">⚙️</span><span class="bl">이벤트 루프</span><span class="bs">4 스레드</span></div>
+                <div class="bigarrow bad">→<span class="albl">JDBC 블로킹</span></div>
+                <div class="bignode bad"><span class="bic">🧊</span><span class="bl">스레드 점유</span></div>
+                <div class="bigarrow bad">💥</div>
+                <div class="bignode bad"><span class="bic">🐌</span><span class="bl">전체 정체</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 루프 스레드가 막히면 모든 요청이 멈춤</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">⚙️</span><span class="bl">이벤트 루프</span></div>
+                <div class="bigarrow good">→<span class="albl">offload</span></div>
+                <div class="bignode accent"><span class="bic">🧵</span><span class="bl">boundedElastic</span><span class="bs">별도 풀</span></div>
+                <div class="bigarrow good">또는</div>
+                <div class="bignode good"><span class="bic">⚡</span><span class="bl">R2DBC 논블로킹</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 블로킹은 별도 스케줄러로 격리 또는 논블로킹 드라이버 사용</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>적은 부하에도 지연 폭증</li><li>CPU는 노는데 처리량 저조</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>루프 스레드에서 블로킹 I/O</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><b>BlockHound</b>로 블로킹 호출 탐지</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>논블로킹 드라이버(R2DBC 등)로 전환</li>
+              <li>불가피하면 <code>subscribeOn(boundedElastic)</code></li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 개발/테스트에 BlockHound 상시 적용으로 블로킹 조기 차단.</div></div>
+      </section>
+
+      <!-- no subscribe -->
+      <section class="tcase" id="no-subscribe">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">아무 일도 안 일어남 (subscribe 누락)</h2>
+        <div class="tsig">Mono/Flux를 만들었는데 코드가 실행되지 않음</div>
+        <p class="tlede">리액티브 스트림은 <b>구독(subscribe)해야 실행</b>됩니다. 반환·구독하지 않으면 그냥 무시됩니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">cold stream</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🧊</span><span class="bl">Mono 생성</span></div>
+                <div class="bigarrow bad">→<span class="albl">구독 안 함</span></div>
+                <div class="bignode bad"><span class="bic">😴</span><span class="bl">실행 안 됨</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">❓</span><span class="bl">사이드이펙트 X</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 save() 호출했는데 저장이 안 되는 흔한 버그</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🧊</span><span class="bl">Mono</span></div>
+                <div class="bigarrow good">→<span class="albl">return/chain</span></div>
+                <div class="bignode good"><span class="bic">🔗</span><span class="bl">프레임워크가 구독</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">실행됨</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 체인으로 연결해 반환 → 프레임워크가 구독</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>저장/호출이 일어나지 않음</li><li>예외도 로그도 없음</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>Mono/Flux를 구독/반환하지 않음</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>리액티브 반환값을 버리는 곳 탐색</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>리액티브 체인으로 연결해 반환</li>
+              <li>블로킹 컨텍스트면 명시적 subscribe(주의)</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — "Mono/Flux는 반드시 반환하거나 구독"을 리뷰 체크리스트로.</div></div>
+      </section>
+
+      <!-- stacktrace -->
+      <section class="tcase" id="stacktrace">
+        <span class="sev info">🔵 Info</span>
+        <h2 class="ttitle">읽을 수 없는 리액티브 스택트레이스</h2>
+        <div class="tsig">스택트레이스가 Reactor 내부 프레임으로 가득, 원인 라인이 안 보임</div>
+        <p class="tlede">비동기 경계 때문에 일반 스택트레이스로는 어디서 터졌는지 추적이 어렵습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">조립 추적 활성화</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">💥</span><span class="bl">예외</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🌫️</span><span class="bl">Reactor 내부 프레임</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">❓</span><span class="bl">원인 불명</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 비동기 경계로 호출 맥락이 끊김</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🧭</span><span class="bl">checkpoint() / Hooks</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🔍</span><span class="bl">조립 추적</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">원인 라인 식별</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ checkpoint·onOperatorDebug로 조립 시점 추적</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>스택에 비즈니스 코드가 거의 없음</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>비동기 경계로 호출 맥락 손실</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>핵심 연산자에 <code>.checkpoint("설명")</code></li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>운영: <code>checkpoint()</code>를 요소요소에</li>
+              <li>개발: <code>Hooks.onOperatorDebug()</code> / ReactorDebugAgent</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 공통 파이프라인에 의미 있는 checkpoint 라벨을 표준 삽입.</div></div>
+      </section>
+
+      <!-- backpressure / OOM -->
+      <section class="tcase" id="backpressure">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">백프레셔 미처리로 OutOfMemory</h2>
+        <div class="tsig">빠른 생산 + 느린 소비 → 버퍼 폭증 → OOM</div>
+        <p class="tlede">생산 속도가 소비를 압도하는데 흐름 제어가 없으면 중간 버퍼가 무한히 커집니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">흐름 제어</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🚿</span><span class="bl">빠른 생산</span></div>
+                <div class="bigarrow bad">⇉</div>
+                <div class="bignode bad"><span class="bic">🛢️</span><span class="bl">무한 버퍼</span></div>
+                <div class="bigarrow bad">💥</div>
+                <div class="bignode bad"><span class="bic">☠️</span><span class="bl">OOM</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 소비자가 못 따라가는데 계속 쌓임</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🚿</span><span class="bl">생산</span></div>
+                <div class="bigarrow good">→<span class="albl">request(n)</span></div>
+                <div class="bignode good"><span class="bic">🎛️</span><span class="bl">백프레셔 전략</span><span class="bs">buffer/drop/limitRate</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">안정 소비</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 수요 기반(request) + limitRate/버퍼 전략으로 제어</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>힙 사용량 급증, OOM</li><li>스트리밍/대량 처리 시 발생</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>생산≫소비 + 흐름 제어 부재</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>힙 덤프로 버퍼 점유 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>적절한 백프레셔 전략 선택(buffer/drop/latest)</li>
+              <li><code>limitRate()</code>로 수요 제한</li>
+              <li>소비 측 병렬화/최적화</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 무한/대량 스트림은 항상 흐름 제어를 명시적으로 설계.</div></div>
+      </section>
+
+      <!-- context loss -->
+      <section class="tcase" id="context-loss">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">ThreadLocal 컨텍스트 유실</h2>
+        <div class="tsig">MDC 로그·SecurityContext가 비동기 경계에서 사라짐</div>
+        <p class="tlede">리액티브는 스레드를 옮겨다녀 ThreadLocal 기반 컨텍스트(MDC, 인증 정보)가 전파되지 않습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">Reactor Context 전파</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🧵</span><span class="bl">스레드A</span><span class="bs">MDC 설정</span></div>
+                <div class="bigarrow bad">→<span class="albl">스레드 전환</span></div>
+                <div class="bignode bad"><span class="bic">🧵</span><span class="bl">스레드B</span><span class="bs">MDC 없음</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">📭</span><span class="bl">traceId 유실</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 로그에 traceId/사용자 정보가 빠짐</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🧰</span><span class="bl">Reactor Context</span></div>
+                <div class="bigarrow good">→<span class="albl">전파</span></div>
+                <div class="bignode accent"><span class="bic">🪝</span><span class="bl">context-propagation</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">MDC 유지</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ Reactor Context + micrometer context-propagation으로 전파</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>로그에 traceId/userId 누락</li><li>SecurityContext 비어 있음</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>ThreadLocal은 스레드 전환 시 유실</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>비동기 경계 전후 MDC 값 비교</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>Reactor <code>Context</code>에 값 저장·조회</li>
+              <li>micrometer context-propagation 적용</li>
+              <li>Security는 ReactiveSecurityContextHolder</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 관찰성 라이브러리의 컨텍스트 전파 모듈을 초기에 구성.</div></div>
+      </section>
+
+      <div class="pager">
+        <a href="ts-async.html"><div class="dir">← 이전 트러블슈팅</div><div class="ttl">메시징 에러 대응</div></a>
+        <a class="next" href="guide.html"><div class="dir">마무리 →</div><div class="ttl">기술 선택 가이드</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

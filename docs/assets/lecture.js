@@ -1,15 +1,25 @@
 // 공통: 사이드바 생성, 스크롤 진행바, 스크롤 스파이, 등장 애니메이션, 모바일 토글
 
-const PAGES = [
-  { href: "index.html",       num: "0",  label: "오리엔테이션" },
-  { href: "fundamentals.html",num: "1",  label: "네트워크 기초" },
-  { href: "http.html",        num: "2",  label: "HTTP & HTTPS" },
-  { href: "realtime.html",    num: "3",  label: "실시간 통신" },
-  { href: "rpc-graphql.html", num: "4",  label: "gRPC & GraphQL" },
-  { href: "async.html",       num: "5",  label: "비동기 메시징" },
-  { href: "webflux.html",     num: "6",  label: "WebFlux & 코루틴" },
-  { href: "guide.html",       num: "7",  label: "기술 선택 가이드" },
+const GROUPS = [
+  { label: "커리큘럼", pages: [
+    { href: "index.html",       num: "0",  label: "오리엔테이션" },
+    { href: "fundamentals.html",num: "1",  label: "네트워크 기초" },
+    { href: "http.html",        num: "2",  label: "HTTP & HTTPS" },
+    { href: "realtime.html",    num: "3",  label: "실시간 통신" },
+    { href: "rpc-graphql.html", num: "4",  label: "gRPC & GraphQL" },
+    { href: "async.html",       num: "5",  label: "비동기 메시징" },
+    { href: "webflux.html",     num: "6",  label: "WebFlux & 코루틴" },
+    { href: "guide.html",       num: "7",  label: "기술 선택 가이드" },
+  ]},
+  { label: "트러블슈팅 (심화)", pages: [
+    { href: "ts-http.html",        num: "🛟", label: "HTTP 에러 대응" },
+    { href: "ts-realtime.html",    num: "🛟", label: "실시간 에러 대응" },
+    { href: "ts-rpc-graphql.html", num: "🛟", label: "gRPC·GraphQL 에러" },
+    { href: "ts-async.html",       num: "🛟", label: "메시징 에러 대응" },
+    { href: "ts-infra.html",       num: "🛟", label: "네트워크·WebFlux 에러" },
+  ]},
 ];
+const PAGES = GROUPS.flatMap(g => g.pages);
 
 function currentPage() {
   return location.pathname.split("/").pop() || "index.html";
@@ -17,22 +27,29 @@ function currentPage() {
 
 function buildSidebar() {
   const cur = currentPage();
-  const items = PAGES.map(p => {
+
+  const renderPage = (p) => {
     const active = p.href === cur;
     let html = `<a href="${p.href}" class="${active ? "active" : ""}" data-page>
       <span class="num">${p.num}</span>${p.label}</a>`;
     if (active) {
-      const secs = [...document.querySelectorAll("section.block[id]")];
+      const secs = [...document.querySelectorAll("section.block[id], .tcase[id]")];
       if (secs.length > 1) {
         html += `<div class="sub">` + secs.map(s => {
-          const t = s.querySelector("h2.section-title");
+          const t = s.querySelector("h2.section-title, h2.ttitle");
           const label = t ? t.textContent : s.id;
           return `<a href="#${s.id}" data-spy="${s.id}">${label}</a>`;
         }).join("") + `</div>`;
       }
     }
     return html;
-  }).join("");
+  };
+
+  const groupsHtml = GROUPS.map(g => `
+    <div class="nav-section">
+      <div class="label">${g.label}</div>
+      <nav class="nav">${g.pages.map(renderPage).join("")}</nav>
+    </div>`).join("");
 
   return `
   <aside class="sidebar" id="sidebar">
@@ -43,10 +60,7 @@ function buildSidebar() {
         <div class="bs">Backend · Spring/Java</div>
       </div>
     </a>
-    <div class="nav-section">
-      <div class="label">커리큘럼</div>
-      <nav class="nav">${items}</nav>
-    </div>
+    ${groupsHtml}
   </aside>
   <div class="scrim" id="scrim"></div>`;
 }

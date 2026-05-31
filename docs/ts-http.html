@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTTP 에러 대응 · 트러블슈팅</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">TROUBLESHOOTING · HTTP</p>
+        <h2 class="section-title reveal">HTTP 에러 대응</h2>
+        <p class="section-lead reveal">실무에서 가장 자주 마주치는 HTTP/HTTPS 장애를, "문제 상황 → 대응 후" 흐름으로 크게 들여다봅니다.</p>
+        <div class="ts-hero reveal">
+          <h3>읽는 법</h3>
+          <p style="margin:0">각 에러마다 <strong>① 큰 다이어그램(BEFORE 문제 / AFTER 대응)</strong> → <strong>② 증상·원인·진단·대응</strong> → <strong>③ 예방</strong> 순서로 정리했습니다. 왼쪽 사이드바로 에러를 바로 이동할 수 있어요.</p>
+        </div>
+      </section>
+
+      <!-- ===== 504 ===== -->
+      <section class="tcase" id="e504">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">504 Gateway Timeout</h2>
+        <div class="tsig">HTTP/1.1 504 Gateway Timeout</div>
+        <p class="tlede">게이트웨이/로드밸런서가 업스트림(앱) 응답을 제한 시간 안에 받지 못했습니다. 느린 쿼리·외부 호출·스레드 풀 고갈이 주범입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">무슨 일이 일어나는가</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🧑‍💻</span><span class="bl">Client</span></div>
+                <div class="bigarrow">→</div>
+                <div class="bignode bad"><span class="bic">🚪</span><span class="bl">LB / Gateway</span><span class="bs">timeout 5s</span></div>
+                <div class="bigarrow bad">⏳<span class="albl">10s 대기</span></div>
+                <div class="bignode"><span class="bic">🖥️</span><span class="bl">App</span></div>
+                <div class="bigarrow bad">⏳<span class="albl">느린 쿼리</span></div>
+                <div class="bignode bad"><span class="bic">🗄️</span><span class="bl">DB</span><span class="bs">8s 소요</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 LB가 5초에 끊고 504 반환 → 앱은 계속 일하는데 응답은 버려짐</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🧑‍💻</span><span class="bl">Client</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🚪</span><span class="bl">Gateway</span><span class="bs">timeout 3s</span></div>
+                <div class="bigarrow good">→<span class="albl">client&lt;gateway</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">App</span><span class="bs">CB + 2s timeout</span></div>
+                <div class="bigarrow good">⚡<span class="albl">빠른 실패</span></div>
+                <div class="bignode accent"><span class="bic">📊</span><span class="bl">인덱스/캐시</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 타임아웃 계층 정렬 + 서킷브레이커로 빠른 실패, 느린 작업은 비동기 분리</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>특정 API에서 간헐적/지속적 504</li><li>응답 시간 p99가 게이트웨이 타임아웃 근처</li><li>앱 로그엔 정상 처리인데 클라는 실패</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>느린 SQL·풀스캔, 외부 API 지연</li><li>커넥션/스레드 풀 고갈로 대기</li><li>타임아웃이 계층마다 제각각</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>APM/슬로우쿼리 로그로 느린 구간 특정</li><li><code>http.server.requests</code> p99 확인</li><li>풀 사용률(HikariCP active) 모니터</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>느린 쿼리 → 인덱스/쿼리 개선, N+1 제거</li>
+              <li>타임아웃을 <b>클라 &lt; 게이트웨이 &lt; 앱→DB</b> 순으로 정렬</li>
+              <li>외부 호출에 <b>서킷브레이커</b>로 빠른 실패</li>
+              <li>무거운 작업은 <b>비동기(큐)</b>로 분리</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 모든 외부 호출에 타임아웃을 명시(기본값 무한 금지), p99 기반 알람, 부하 테스트로 풀 크기 사전 튜닝.</div></div>
+      </section>
+
+      <!-- ===== 502 ===== -->
+      <section class="tcase" id="e502">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">502 Bad Gateway</h2>
+        <div class="tsig">HTTP/1.1 502 Bad Gateway</div>
+        <p class="tlede">게이트웨이가 업스트림으로부터 잘못된/끊긴 응답을 받았습니다. 주로 배포 중 인스턴스 교체나 OOM, 커넥션 강제 종료입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">무슨 일이 일어나는가</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🧑‍💻</span><span class="bl">Client</span></div>
+                <div class="bigarrow">→</div>
+                <div class="bignode"><span class="bic">🚪</span><span class="bl">LB</span></div>
+                <div class="bigarrow bad">→<span class="albl">연결 시도</span></div>
+                <div class="bignode bad"><span class="bic">💀</span><span class="bl">App 인스턴스</span><span class="bs">배포로 종료됨</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 LB가 죽은 인스턴스로 트래픽을 보냄 → 연결 리셋/502</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🧑‍💻</span><span class="bl">Client</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🩺</span><span class="bl">LB + 헬스체크</span></div>
+                <div class="bigarrow good">→<span class="albl">정상만</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">정상 인스턴스</span></div>
+                <div class="bignode dim"><span class="bic">🔄</span><span class="bl">교체 중(드레이닝)</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 헬스체크로 죽은 노드 제외 + 그레이스풀 셧다운으로 연결 드레이닝</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>배포 직후 짧게 502 스파이크</li><li>특정 인스턴스에서만 발생</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>롤링 배포 중 트래픽이 종료 노드로 감</li><li>OOM/패닉으로 프로세스 다운</li><li>keep-alive 타임아웃 불일치</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>LB 타깃 헬스 상태 확인</li><li>앱 OOM/종료 로그, 메모리 추이</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>readiness/liveness 헬스체크 정확히 설정</li>
+              <li>그레이스풀 셧다운 + 커넥션 드레이닝</li>
+              <li>앱 keep-alive 타임아웃을 LB보다 <b>길게</b></li>
+              <li>OOM이면 힙/리소스 한계 점검</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 무중단 배포(블루-그린/카나리), readiness 통과 전 트래픽 차단, 메모리 알람.</div></div>
+      </section>
+
+      <!-- ===== CORS ===== -->
+      <section class="tcase" id="cors">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">CORS 차단</h2>
+        <div class="tsig">Access to fetch blocked by CORS policy: No 'Access-Control-Allow-Origin'</div>
+        <p class="tlede">브라우저가 다른 출처(origin)로의 요청을 보안 정책으로 차단했습니다. 서버가 허용 헤더를 주지 않은 것이 핵심입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">프리플라이트(preflight) 흐름</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🌐</span><span class="bl">Browser</span><span class="bs">app.com</span></div>
+                <div class="bigarrow bad">→<span class="albl">OPTIONS</span></div>
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">API</span><span class="bs">api.com</span></div>
+                <div class="bigarrow bad">✗<span class="albl">ACAO 없음</span></div>
+                <div class="bignode bad"><span class="bic">🚫</span><span class="bl">브라우저 차단</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 서버 응답에 Access-Control-Allow-Origin이 없어 브라우저가 응답을 버림</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🌐</span><span class="bl">Browser</span></div>
+                <div class="bigarrow good">→<span class="albl">OPTIONS</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">API</span><span class="bs">ACAO: app.com</span></div>
+                <div class="bigarrow good">✓<span class="albl">허용</span></div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">실제 요청 진행</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 서버가 허용 출처·메서드·헤더를 응답 → 본 요청 진행</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>브라우저 콘솔에 CORS 에러</li><li>서버 로그엔 200인데 화면은 실패</li><li>OPTIONS 요청이 4xx</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>서버가 CORS 헤더 미응답</li><li>커스텀 헤더/메서드 미허용</li><li>credentials 사용 시 와일드카드 불가</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>DevTools에서 OPTIONS 응답 헤더 확인</li><li><code>curl -i -X OPTIONS</code>로 직접 점검</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>서버에 글로벌 <code>CorsConfiguration</code> 설정</li>
+              <li>허용 origin/method/header 명시</li>
+              <li>쿠키 인증이면 <code>allowCredentials=true</code> + 정확한 origin</li>
+              <li>운영은 <code>*</code> 대신 도메인 화이트리스트</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 게이트웨이 한 곳에서 CORS 정책 일괄 관리, 환경별 허용 도메인 분리.</div></div>
+      </section>
+
+      <!-- ===== PKIX ===== -->
+      <section class="tcase" id="pkix">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">TLS 인증서 검증 실패 (PKIX)</h2>
+        <div class="tsig">javax.net.ssl.SSLHandshakeException: PKIX path building failed</div>
+        <p class="tlede">클라이언트(JVM)의 신뢰 저장소(truststore)에 상대 서버의 CA 인증서가 없어 TLS 핸드셰이크가 실패했습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">신뢰 체인 검증</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">☕</span><span class="bl">JVM Client</span><span class="bs">truststore</span></div>
+                <div class="bigarrow bad">🔐<span class="albl">TLS</span></div>
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">Server</span><span class="bs">사내 CA 서명</span></div>
+                <div class="bigarrow bad">✗<span class="albl">CA 없음</span></div>
+                <div class="bignode bad"><span class="bic">⛔</span><span class="bl">검증 실패</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 신뢰 체인을 만들 CA가 truststore에 없음 → 핸드셰이크 중단</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">☕</span><span class="bl">JVM Client</span><span class="bs">+ 사내 Root CA</span></div>
+                <div class="bigarrow good">🔐<span class="albl">TLS</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">Server</span></div>
+                <div class="bigarrow good">✓<span class="albl">체인 OK</span></div>
+                <div class="bignode good"><span class="bic">🔒</span><span class="bl">암호화 통신</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ CA를 truststore에 등록하면 신뢰 체인 완성</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>외부/사내 HTTPS 호출 시 SSLHandshakeException</li><li>brew/로컬은 되는데 서버에선 실패</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>자체 서명/사설 CA 미등록</li><li>중간 인증서 체인 누락</li><li>도메인-인증서 CN/SAN 불일치</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>openssl s_client -connect host:443</code>로 체인 확인</li><li><code>-showcerts</code>로 중간 CA 누락 점검</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>CA를 JVM truststore에 추가 (<code>keytool -importcert</code>)</li>
+              <li>서버는 인증서 <b>풀체인</b>을 제공하도록 설정</li>
+              <li>도메인-SAN 일치 확인</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 사내 CA 배포 자동화, 인증서 만료 모니터링, 컨테이너 이미지에 CA 번들 포함.</div></div>
+      </section>
+
+      <!-- ===== 429 ===== -->
+      <section class="tcase" id="e429">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">429 Too Many Requests</h2>
+        <div class="tsig">HTTP/1.1 429 Too Many Requests · Retry-After: 2</div>
+        <p class="tlede">레이트 리밋(서버 또는 호출 대상 API의 쿼터)을 초과했습니다. 무지성 재시도는 상황을 더 악화시킵니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">재시도 전략의 차이</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🔁</span><span class="bl">즉시 재시도</span><span class="bs">x100</span></div>
+                <div class="bigarrow bad">⇉<span class="albl">폭주</span></div>
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">API</span><span class="bs">rate limit</span></div>
+                <div class="bigarrow bad">✗</div>
+                <div class="bignode bad"><span class="bic">🌊</span><span class="bl">429 더 심해짐</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 즉시·동시 재시도가 thundering herd를 만들어 한도를 계속 때림</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">⏱️</span><span class="bl">백오프+지터</span><span class="bs">1·2·4s±</span></div>
+                <div class="bigarrow good">→<span class="albl">완만히</span></div>
+                <div class="bignode good"><span class="bic">🪣</span><span class="bl">토큰 버킷</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">API 200</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ Retry-After 존중 + 지수 백오프·지터 + 자체 스로틀링</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>외부 API 호출이 429로 실패</li><li>피크 시간대 집중 발생</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>쿼터/RPS 한도 초과</li><li>재시도 증폭(retry storm)</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>응답 헤더의 <code>Retry-After</code>·rate limit 헤더 확인</li><li>호출량 대시보드 점검</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li><code>Retry-After</code>를 반드시 존중</li>
+              <li>지수 백오프 + <b>지터</b>로 재시도 분산</li>
+              <li>호출 측 토큰버킷으로 자체 스로틀</li>
+              <li>가능하면 배치/캐시로 호출량 자체 감소</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 클라이언트 레이트리미터 내장, 캐싱으로 중복 호출 제거, 쿼터 상향 협의.</div></div>
+      </section>
+
+      <!-- ===== 중복결제 ===== -->
+      <section class="tcase" id="dup">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">재시도로 인한 중복 처리 (이중 결제)</h2>
+        <div class="tsig">POST 재시도 → 같은 주문이 2번 결제됨</div>
+        <p class="tlede">멱등하지 않은 POST가 네트워크 오류 후 재시도되어 동일 작업이 중복 수행됐습니다. 돈이 걸린 가장 위험한 케이스입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">멱등키(Idempotency-Key)의 역할</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🧑‍💻</span><span class="bl">Client</span></div>
+                <div class="bigarrow bad">→<span class="albl">POST(타임아웃)</span></div>
+                <div class="bignode bad"><span class="bic">💳</span><span class="bl">결제 #1</span></div>
+                <div class="bigarrow bad">🔁<span class="albl">재시도</span></div>
+                <div class="bignode bad"><span class="bic">💳</span><span class="bl">결제 #2</span><span class="bs">중복!</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 첫 응답이 유실됐을 뿐 결제는 성공 → 재시도가 두 번째 결제 생성</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🧑‍💻</span><span class="bl">Client</span><span class="bs">Key: abc-123</span></div>
+                <div class="bigarrow good">→<span class="albl">POST + Key</span></div>
+                <div class="bignode good"><span class="bic">🗝️</span><span class="bl">서버: Key 확인</span></div>
+                <div class="bigarrow good">🔁<span class="albl">같은 Key</span></div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">기존 결과 반환</span><span class="bs">결제 1회</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 같은 멱등키 요청은 한 번만 처리하고 저장된 결과를 반환</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>동일 주문에 결제/적립 2건</li><li>네트워크 불안정 구간에서 증가</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>비멱등 POST의 재시도</li><li>타임아웃 후 성공 여부 모름</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>중복 트랜잭션 로그/타임스탬프 비교</li><li>클라 재시도 로직 점검</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>요청에 <b>Idempotency-Key</b> 헤더 부여</li>
+              <li>서버가 키별 처리 결과를 저장(예: Redis)</li>
+              <li>같은 키 재요청은 저장 결과를 그대로 반환</li>
+              <li>DB 유니크 제약으로 이중 안전망</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 결제·주문 등 금전 API는 기본으로 멱등키 적용, 클라 SDK에서 자동 부여.</div></div>
+      </section>
+
+      <div class="pager">
+        <a href="http.html"><div class="dir">← 챕터로</div><div class="ttl">2. HTTP & HTTPS</div></a>
+        <a class="next" href="ts-realtime.html"><div class="dir">다음 트러블슈팅 →</div><div class="ttl">실시간 에러 대응</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>

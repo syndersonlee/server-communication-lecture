@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>실시간 통신 에러 대응 · 트러블슈팅</title>
+  <link rel="stylesheet" href="assets/lecture.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <div class="wrap">
+
+      <section class="block" id="overview">
+        <p class="page-eyebrow reveal">TROUBLESHOOTING · REALTIME</p>
+        <h2 class="section-title reveal">실시간 통신 에러 대응</h2>
+        <p class="section-lead reveal">SSE·WebSocket을 운영하면 반드시 만나는 프록시·다중서버·연결 관리 문제들.</p>
+      </section>
+
+      <!-- SSE buffering -->
+      <section class="tcase" id="sse-buffer">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">SSE 이벤트가 몰아서 도착</h2>
+        <div class="tsig">실시간이어야 할 이벤트가 수 초~수십 초 뒤 한꺼번에 도착</div>
+        <p class="tlede">중간 프록시가 응답을 버퍼링해서 스트림이 실시간으로 흐르지 않습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">프록시 버퍼링</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🖥️</span><span class="bl">Spring</span><span class="bs">즉시 send</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🧱</span><span class="bl">Nginx</span><span class="bs">buffering ON</span></div>
+                <div class="bigarrow bad">⏳<span class="albl">모았다가</span></div>
+                <div class="bignode bad"><span class="bic">🌐</span><span class="bl">Browser</span><span class="bs">뒤늦게 폭주</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 프록시가 버퍼를 채울 때까지 클라에 전달 안 함</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">Spring</span><span class="bs">X-Accel-Buffering: no</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🧱</span><span class="bl">Nginx</span><span class="bs">buffering OFF</span></div>
+                <div class="bigarrow good">⚡<span class="albl">즉시 통과</span></div>
+                <div class="bignode good"><span class="bic">🌐</span><span class="bl">Browser</span><span class="bs">실시간</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 버퍼링 끄면 이벤트가 발생 즉시 전달</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>로컬은 정상, 운영(프록시 뒤)만 지연</li><li>이벤트가 묶여서 한 번에 표시</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>Nginx <code>proxy_buffering on</code> 기본값</li><li>gzip 버퍼링</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>curl -N</code> 직접 연결 시엔 즉시 도착 → 프록시 원인 확정</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>응답 헤더 <code>X-Accel-Buffering: no</code></li>
+              <li>Nginx <code>proxy_buffering off</code></li>
+              <li>주기적 heartbeat(<code>:ping</code>) 전송</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — SSE 엔드포인트 전용 프록시 location에 버퍼링 off를 기본 적용.</div></div>
+      </section>
+
+      <!-- SSE disconnect -->
+      <section class="tcase" id="sse-disconnect">
+        <span class="sev warn">🟠 Warning</span>
+        <h2 class="ttitle">SSE 연결이 주기적으로 끊김</h2>
+        <div class="tsig">일정 시간마다 연결 종료 → 재연결 반복, 일부 이벤트 유실</div>
+        <p class="tlede">LB/서버의 idle 타임아웃, 또는 HTTP/1.1 브라우저 연결 수 제한이 원인입니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">연결 유지 & 이어받기</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🌐</span><span class="bl">EventSource</span></div>
+                <div class="bigarrow bad">✂️<span class="albl">idle 60s 끊김</span></div>
+                <div class="bignode bad"><span class="bic">🚪</span><span class="bl">LB</span></div>
+                <div class="bigarrow bad">↻<span class="albl">처음부터</span></div>
+                <div class="bignode bad"><span class="bic">❓</span><span class="bl">이벤트 유실</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 끊긴 사이 발생한 이벤트를 놓침</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🌐</span><span class="bl">EventSource</span><span class="bs">Last-Event-ID</span></div>
+                <div class="bigarrow good">↻<span class="albl">자동 재연결</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">서버</span><span class="bs">ID 이후만 재전송</span></div>
+                <div class="bigarrow good">✓</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">유실 없음</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ heartbeat로 유지 + Last-Event-ID로 빠진 구간 복구</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>~30·60초마다 reconnect 로그</li><li>탭 여러 개 열면 더 심함</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>LB/서버 idle timeout</li><li>HTTP/1.1 도메인당 6 연결 제한</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>끊기는 간격이 일정한지(=타임아웃) 확인</li><li>HTTP 버전 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>주기적 heartbeat로 연결 유지</li>
+              <li>이벤트에 <code>id</code> 부여 + <code>Last-Event-ID</code>로 이어받기</li>
+              <li>LB idle timeout 상향</li>
+              <li><b>HTTP/2</b> 적용으로 연결 수 제한 회피</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 이벤트 시퀀스 ID를 항상 발급해 재연결 복구를 표준화.</div></div>
+      </section>
+
+      <!-- WS handshake -->
+      <section class="tcase" id="ws-handshake">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">WebSocket 핸드셰이크 실패</h2>
+        <div class="tsig">Error during WebSocket handshake: unexpected response code: 200 / 403</div>
+        <p class="tlede">프록시가 <code>Upgrade</code> 헤더를 전달하지 않거나, Origin 정책에 막혀 ws 전환이 실패합니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">프록시 업그레이드 전달</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">🌐</span><span class="bl">Client</span><span class="bs">Upgrade: websocket</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🧱</span><span class="bl">Nginx</span><span class="bs">헤더 드롭</span></div>
+                <div class="bigarrow bad">→<span class="albl">일반 HTTP</span></div>
+                <div class="bignode bad"><span class="bic">⛔</span><span class="bl">200, 업그레이드 X</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 101 대신 200 → 클라가 핸드셰이크 실패 처리</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🌐</span><span class="bl">Client</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🧱</span><span class="bl">Nginx</span><span class="bs">Upgrade 전달</span></div>
+                <div class="bigarrow good">→<span class="albl">101</span></div>
+                <div class="bignode good"><span class="bic">🔌</span><span class="bl">WebSocket 연결</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 프록시가 Upgrade/Connection 헤더를 전달하면 101 성공</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>로컬 직결은 되는데 운영만 실패</li><li>콘솔에 handshake 200/403</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>프록시 Upgrade 헤더 미전달</li><li>Origin 미허용</li><li>L4가 아닌 L7에서 ws 미지원 설정</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li><code>websocat ws://...</code>로 직접 연결 시도</li><li>응답 코드(101 vs 200/403) 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>Nginx: <code>proxy_set_header Upgrade $http_upgrade; Connection "upgrade";</code></li>
+              <li>HTTP/1.1 유지(<code>proxy_http_version 1.1</code>)</li>
+              <li>서버 <code>setAllowedOriginPatterns</code> 허용</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — ws 경로용 프록시 템플릿을 표준화, SockJS 폴백 구성.</div></div>
+      </section>
+
+      <!-- multi-server -->
+      <section class="tcase" id="multi-server">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">메시지가 일부 사용자에게만 안 감 (다중 서버)</h2>
+        <div class="tsig">스케일아웃 후 같은 방 사용자 중 일부만 메시지 수신</div>
+        <p class="tlede">내장 브로커는 인스턴스 로컬 메모리라, 다른 서버에 붙은 구독자에게는 메시지가 닿지 않습니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">서버 간 메시지 공유</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode"><span class="bic">👤</span><span class="bl">User A</span></div>
+                <div class="bigarrow bad">→</div>
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">서버1</span><span class="bs">로컬 브로커</span></div>
+                <div class="bigarrow bad">✗<span class="albl">단절</span></div>
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">서버2</span><span class="bs">User B 구독</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 서버1의 메시지가 서버2 구독자(B)에게 전달 안 됨</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">서버1</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode accent"><span class="bic">📮</span><span class="bl">Redis / 외부 브로커</span></div>
+                <div class="bigarrow good">⇉<span class="albl">fan-out</span></div>
+                <div class="bignode good"><span class="bic">🖥️</span><span class="bl">서버2 → User B</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ Redis Pub/Sub·외부 브로커 relay로 전 인스턴스에 전파</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>인스턴스 1대일 땐 정상, 늘리면 누락</li><li>새로고침하면 다른 서버로 붙어 동작이 달라짐</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>SimpleBroker가 JVM 로컬 메모리</li><li>구독 정보가 서버 간 공유 안 됨</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>같은 방을 서로 다른 인스턴스에 붙여 재현</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>외부 STOMP 브로커 relay(RabbitMQ/ActiveMQ)</li>
+              <li>또는 Redis Pub/Sub로 서버 간 fan-out</li>
+              <li>세션 어피니티(sticky)는 보조 수단일 뿐</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 처음부터 다중 인스턴스를 가정해 외부 브로커로 설계.</div></div>
+      </section>
+
+      <!-- connection flood -->
+      <section class="tcase" id="conn-flood">
+        <span class="sev crit">🔴 Critical</span>
+        <h2 class="ttitle">동시 연결 폭증 → 스레드/메모리 고갈</h2>
+        <div class="tsig">OutOfMemoryError / 스레드 풀 고갈로 신규 연결 거부</div>
+        <p class="tlede">연결당 스레드(BIO) 모델로 수만 동시 연결을 받으면 자원이 폭발합니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">동시성 모델의 차이</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🔌</span><span class="bl">50,000 연결</span></div>
+                <div class="bigarrow bad">→<span class="albl">1:1</span></div>
+                <div class="bignode bad"><span class="bic">🧵</span><span class="bl">50,000 스레드</span><span class="bs">~50GB</span></div>
+                <div class="bigarrow bad">💥</div>
+                <div class="bignode bad"><span class="bic">☠️</span><span class="bl">OOM</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 연결당 스레드 → 메모리/컨텍스트 스위칭 폭발</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🔌</span><span class="bl">50,000 연결</span></div>
+                <div class="bigarrow good">⇉<span class="albl">멀티플렉싱</span></div>
+                <div class="bignode good"><span class="bic">⚙️</span><span class="bl">Netty 이벤트루프</span><span class="bs">스레드 수십 개</span></div>
+                <div class="bigarrow good">✓</div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">안정</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 비동기(Netty/WebFlux)로 적은 스레드로 많은 연결 처리</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>연결 수 증가 시 메모리 급증/OOM</li><li>신규 연결 거부, 지연 폭발</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>BIO(연결당 스레드)</li><li>죽은 연결 미정리</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>스레드 수·힙 사용량 모니터</li><li>활성 연결 수 추이</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li>비동기 모델(Netty/WebFlux)로 전환</li>
+              <li>ping/pong heartbeat로 죽은 연결 정리</li>
+              <li>인스턴스 수평 확장 + 외부 브로커</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — 대규모 실시간은 처음부터 논블로킹 스택 + 연결 수 한계 부하 테스트.</div></div>
+      </section>
+
+      <!-- emitter io -->
+      <section class="tcase" id="emitter-io">
+        <span class="sev info">🔵 Info</span>
+        <h2 class="ttitle">SseEmitter.send() 시 IOException (Broken pipe)</h2>
+        <div class="tsig">java.io.IOException: Broken pipe / connection reset</div>
+        <p class="tlede">클라이언트가 이미 떠난(탭 닫기 등) 연결로 서버가 전송을 시도해 발생합니다. 흔하고, 정상적인 정리만 잘 하면 됩니다.</p>
+
+        <div class="stage reveal">
+          <div class="stitle">끊긴 연결 정리</div>
+          <div class="ba">
+            <div class="lane before">
+              <span class="tag-lane">BEFORE · 문제</span>
+              <div class="bigflow">
+                <div class="bignode bad"><span class="bic">🖥️</span><span class="bl">서버: send()</span></div>
+                <div class="bigarrow bad">→<span class="albl">끊긴 소켓</span></div>
+                <div class="bignode bad"><span class="bic">❌</span><span class="bl">Broken pipe</span></div>
+                <div class="bigarrow bad">📈</div>
+                <div class="bignode bad"><span class="bic">🗑️</span><span class="bl">죽은 emitter 누적</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#b42318">💥 예외 미처리 → 죽은 emitter가 컬렉션에 쌓여 메모리 누수</p>
+            </div>
+            <div class="lane after">
+              <span class="tag-lane">AFTER · 대응</span>
+              <div class="bigflow">
+                <div class="bignode good"><span class="bic">🛡️</span><span class="bl">try/catch</span></div>
+                <div class="bigarrow good">→</div>
+                <div class="bignode good"><span class="bic">🧹</span><span class="bl">emitter 제거</span></div>
+                <div class="bigarrow good">+<span class="albl">콜백</span></div>
+                <div class="bignode good"><span class="bic">✅</span><span class="bl">onCompletion/Timeout/Error</span></div>
+              </div>
+              <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:#05875b">✅ 예외 시 즉시 제거 + 수명주기 콜백에서 정리</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tgrid reveal">
+          <div class="tbox symptom"><div class="th"><span class="em">🔍</span>증상</div><ul><li>로그에 Broken pipe 다발</li><li>장시간 운영 시 메모리 완만히 증가</li></ul></div>
+          <div class="tbox cause"><div class="th"><span class="em">⚠️</span>원인</div><ul><li>클라가 떠난 연결로 전송</li><li>emitter 정리 누락</li></ul></div>
+          <div class="tbox diagnose"><div class="th"><span class="em">🩺</span>진단</div><ul><li>활성 emitter 수가 실제 사용자보다 큰지 확인</li></ul></div>
+          <div class="tbox fix"><div class="th"><span class="em">✅</span>대응</div>
+            <ol class="fixsteps">
+              <li><code>send()</code>를 try/catch로 감싸고 실패 시 제거</li>
+              <li><code>onCompletion/onTimeout/onError</code>에서 컬렉션 정리</li>
+              <li>Broken pipe는 WARN 이하로 로깅(노이즈 감소)</li>
+            </ol>
+          </div>
+        </div>
+        <div class="prevent reveal"><span class="em">🛡️</span><div><b>예방</b> — emitter 저장소를 단일 진입점으로 두고 추가/제거를 일관되게 관리.</div></div>
+      </section>
+
+      <div class="pager">
+        <a href="ts-http.html"><div class="dir">← 이전 트러블슈팅</div><div class="ttl">HTTP 에러 대응</div></a>
+        <a class="next" href="ts-rpc-graphql.html"><div class="dir">다음 트러블슈팅 →</div><div class="ttl">gRPC·GraphQL 에러</div></a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/lecture.js"></script>
+</body>
+</html>
