@@ -76,6 +76,74 @@
         <div class="callout tip reveal"><span class="emoji">💡</span><p>매 요청마다 핸드셰이크를 하면 비싸므로, HTTP/1.1의 <strong>Keep-Alive</strong>, 커넥션 풀 같은 <strong>"연결 재사용"</strong> 기법이 등장합니다.</p></div>
       </section>
 
+      <section class="block" id="tcp-deep">
+        <h2 class="section-title reveal">TCP는 어떻게 "신뢰성"을 만드는가</h2>
+        <p class="reveal">아래 계층의 <strong>IP는 패킷을 그냥 best-effort로 던질 뿐</strong>입니다 — 유실·중복·순서 뒤바뀜이 일어날 수 있죠. TCP는 그 위에서 <strong>"순서대로, 빠짐없이 도착하는 바이트 스트림"</strong>이라는 환상을 만들어 줍니다. HTTP·WebSocket·gRPC·DB 커넥션이 안심하고 데이터를 주고받는 건 전부 TCP 덕분입니다.</p>
+
+        <h3 class="reveal">① 신뢰성의 3가지 장치</h3>
+        <div class="grid c3 reveal">
+          <div class="card flat"><h4>🔢 시퀀스 번호 + ACK</h4><p style="margin:0;font-size:14px">보내는 모든 바이트에 번호를 매기고, 받은 쪽은 "여기까지 받았다"는 ACK를 보냄. 송신자는 ACK로 도착을 확인.</p></div>
+          <div class="card flat"><h4>🔁 재전송</h4><p style="margin:0;font-size:14px">ACK가 일정 시간 내 안 오거나(RTO 타임아웃) 중복 ACK가 3번 오면 → 해당 구간을 <strong>다시 전송</strong>.</p></div>
+          <div class="card flat"><h4>📏 순서 재조립</h4><p style="margin:0;font-size:14px">늦게·뒤섞여 도착한 세그먼트를 번호 순으로 버퍼에 정렬한 뒤 애플리케이션에 올려줌.</p></div>
+        </div>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node blue">Client</div>
+            <div class="arrow">→<span class="lbl">SEQ=1 "ABCD"</span></div>
+            <div class="node">Server</div>
+            <div class="arrow">←<span class="lbl">ACK=5 (다음은 5번)</span></div>
+            <div class="node blue">Client</div>
+          </div>
+          <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:var(--gray-500)">유실되면? → ACK가 안 옴 → 송신자가 같은 구간을 재전송</p>
+        </div>
+
+        <h3 class="reveal">② 흐름 제어 & 혼잡 제어</h3>
+        <div class="vs reveal">
+          <div class="side">
+            <h4>🪟 흐름 제어 (Flow Control)</h4>
+            <p style="font-size:14.5px;margin:0 0 8px">수신자가 "내 버퍼에 이만큼 여유 있어"(receive window)를 알려주면, 송신자는 그만큼만 보냄.</p>
+            <ul><li>빠른 송신자가 느린 수신자를 압도하지 않게</li><li><strong>애플리케이션 백프레셔의 TCP 버전</strong></li></ul>
+          </div>
+          <div class="mid">+</div>
+          <div class="side">
+            <h4>🚦 혼잡 제어 (Congestion Control)</h4>
+            <p style="font-size:14.5px;margin:0 0 8px">네트워크(중간 경로)가 막히면 전송 속도를 스스로 낮춤.</p>
+            <ul><li>Slow Start로 천천히 늘렸다, 손실 감지 시 줄임</li><li>모두가 회선을 공정하게 나눠 쓰도록</li></ul>
+          </div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">💡</span><p><strong>흐름 제어 = 상대방 사정</strong>(수신 버퍼), <strong>혼잡 제어 = 네트워크 사정</strong>(중간 경로 혼잡). 둘 다 "얼마나 빨리 보낼지"를 조절하지만 보는 대상이 다릅니다.</p></div>
+
+        <h3 class="reveal">③ 연결 종료: 4-way Handshake & TIME_WAIT</h3>
+        <p class="reveal">연결을 맺을 땐 3번, <strong>끊을 땐 4번</strong> 주고받습니다. 양쪽이 각자 독립적으로 "나는 더 보낼 거 없다(FIN)"를 선언하기 때문입니다.</p>
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node blue">Client</div>
+            <div class="arrow">①→<span class="lbl">FIN</span></div>
+            <div class="node">Server</div>
+            <div class="arrow">←②<span class="lbl">ACK</span></div>
+            <div class="node">Server</div>
+            <div class="arrow">←③<span class="lbl">FIN</span></div>
+            <div class="node blue">Client</div>
+            <div class="arrow">④→<span class="lbl">ACK</span></div>
+            <div class="node green">종료</div>
+          </div>
+          <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:var(--gray-500)">먼저 닫은 쪽은 잠시 <strong>TIME_WAIT</strong> 상태로 남음</p>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⏳</span><p><strong>TIME_WAIT은 버그가 아니라 정상</strong>입니다 — 뒤늦게 도착하는 패킷·재전송된 마지막 ACK가 다음 연결을 오염시키지 않도록 일정 시간 기다리는 것. 다만 <u>매 요청마다 연결을 새로 맺고 끊으면</u> 이게 수만 개씩 쌓여 포트가 고갈됩니다 → <a href="ts-infra.html#timewait">커넥션 재사용으로 해결</a>.</p></div>
+
+        <h3 class="reveal">④ TCP의 함정: Head-of-Line Blocking</h3>
+        <p class="reveal">TCP는 "순서 보장"이 강점이자 약점입니다. <strong>앞 세그먼트 하나가 유실되면, 뒤에 멀쩡히 도착한 데이터도 그게 재전송될 때까지 줄 서서 기다려야</strong> 합니다(HOL Blocking).</p>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p>그래서 HTTP/2는 한 TCP 연결에 여러 스트림을 멀티플렉싱했지만 <u>TCP 레벨 HOL은 여전</u>했고, <strong>HTTP/3는 아예 전송을 UDP 기반 QUIC으로 바꿔</strong> 이 문제를 해결합니다. (2장에서 이어집니다)</p></div>
+
+        <h3 class="reveal">⑤ 백엔드 개발자가 챙겨야 할 TCP 노브</h3>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>⏱️ connect / read 타임아웃</h4><p style="margin:0;font-size:14px"><strong>connect</strong>=연결 수립 대기, <strong>read</strong>=응답 데이터 대기. 둘 다 명시하지 않으면 무한 대기로 스레드가 묶임.</p></div>
+          <div class="card flat"><h4>♻️ 커넥션 풀 & Keep-Alive</h4><p style="margin:0;font-size:14px">3-way handshake 비용을 아끼려 연결을 재사용. HTTP 클라이언트/DB 풀의 핵심.</p></div>
+          <div class="card flat"><h4>💓 TCP keepalive vs HTTP keep-alive</h4><p style="margin:0;font-size:14px">이름은 비슷하지만 다름 — <strong>TCP keepalive</strong>(SO_KEEPALIVE)는 죽은 연결 감지용, <strong>HTTP Keep-Alive</strong>는 연결 재사용용.</p></div>
+          <div class="card flat"><h4>⚡ Nagle / TCP_NODELAY</h4><p style="margin:0;font-size:14px">작은 패킷을 모아 보내는 Nagle 알고리즘이 지연을 유발할 수 있음. 저지연 실시간 통신은 <code>TCP_NODELAY</code>로 끔.</p></div>
+        </div>
+      </section>
+
       <section class="block" id="socket">
         <h2 class="section-title reveal">소켓과 BIO / NIO</h2>
         <p class="reveal"><strong>소켓 = IP + Port</strong>. 모든 상위 프로토콜의 토대입니다. 서버가 연결을 처리하는 두 가지 방식이 이후 WebFlux 이야기로 이어집니다.</p>
@@ -141,7 +209,9 @@
           <ul style="margin:0">
             <li>통신은 <strong>계층 구조</strong>로 분리 — 백엔드는 Application + Transport 집중</li>
             <li><strong>TCP</strong>(신뢰성·연결형) vs <strong>UDP</strong>(빠름·비연결형)</li>
-            <li>연결 수립(3-way handshake)은 비싸다 → <strong>연결 재사용</strong>이 중요</li>
+            <li>TCP 신뢰성 = <strong>시퀀스/ACK · 재전송 · 순서 재조립</strong> + 흐름/혼잡 제어</li>
+            <li>연결: 수립 3-way, 종료 4-way → <strong>TIME_WAIT</strong>은 정상, 단 연결 재사용이 중요</li>
+            <li>TCP 순서 보장의 대가 = <strong>HOL Blocking</strong> → HTTP/3(QUIC)가 해결</li>
             <li><strong>소켓 = IP+Port</strong>, BIO/NIO 차이가 대규모 동시성의 핵심</li>
           </ul>
         </div>
