@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>1. HTTP / REST 실습</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 1 · SYNC</span>
+    <h2 class="page-title">HTTP / REST</h2>
+    <p class="page-desc">가장 기본이 되는 <b>요청-응답</b> 모델. 메서드, 상태코드, 멱등성을 직접 호출하며 확인합니다.</p>
+
+    <div class="note tip">
+      <b>핵심 개념</b> · HTTP는 <b>무상태(stateless)</b>이며 <b>요청이 있어야만 응답</b>합니다.
+      그래서 서버가 먼저 데이터를 보내는 "실시간"은 기본적으로 불가능 → 이후 실습(Polling/SSE/WebSocket)의 출발점.
+    </div>
+
+    <h3>인터랙티브 데모</h3>
+
+    <div class="card">
+      <h4><span class="badge get">GET</span> 예약 목록 / 단건 조회 <span class="pill">안전 · 멱등</span></h4>
+      <div class="row">
+        <button class="blue" onclick="listAll()">GET /api/rest/reservations</button>
+        <div class="grow">
+          <label>단건 조회 ID</label>
+          <input id="getId" value="9001" style="width:120px" />
+        </div>
+        <button class="ghost" onclick="getOne()">단건 조회</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4><span class="badge post">POST</span> 예약 생성 <span class="pill off">멱등 아님</span></h4>
+      <div class="row">
+        <div class="grow">
+          <label>호텔명</label>
+          <input id="hotelName" value="야놀자호텔 부산" />
+        </div>
+        <div class="grow">
+          <label>체크인</label>
+          <input id="checkIn" value="2026-07-15" />
+        </div>
+        <button onclick="createOne()">POST 생성</button>
+      </div>
+      <div class="note warn" style="margin-bottom:0">
+        ⚠️ 같은 내용으로 여러 번 누르면 <b>매번 새 예약이 생성</b>됩니다(멱등하지 않음). 응답의 <code>201 Created</code>와 <code>Location</code> 헤더를 확인하세요.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4><span class="badge delete">DELETE</span> 예약 삭제 <span class="pill on">멱등</span> & 상태코드 체험</h4>
+      <div class="row">
+        <div class="grow">
+          <label>삭제할 ID</label>
+          <input id="delId" value="9001" style="width:120px" />
+        </div>
+        <button class="ghost" onclick="deleteOne()">DELETE</button>
+        <div class="grow">
+          <label>임의 상태코드 받아보기</label>
+          <select id="statusCode">
+            <option>200</option><option>201</option><option>301</option>
+            <option selected>404</option><option>409</option><option>429</option><option>500</option><option>503</option>
+          </select>
+        </div>
+        <button class="ghost" onclick="tryStatus()">GET /status/{code}</button>
+      </div>
+    </div>
+
+    <h3>요청 / 응답 로그</h3>
+    <div class="row" style="margin-bottom:10px">
+      <button class="ghost" onclick="clearLog('log')">로그 비우기</button>
+    </div>
+    <div id="log" class="console"></div>
+
+    <h3>서버 코드 (Spring)</h3>
+<pre>@RestController
+@RequestMapping("/api/rest")
+public class RestDemoController {
+
+    @PostMapping("/reservations")
+    public ResponseEntity&lt;Reservation&gt; create(@Valid @RequestBody CreateRequest req) {
+        Reservation created = save(req);
+        return ResponseEntity
+                .created(URI.create("/api/rest/reservations/" + created.id())) // 201 + Location
+                .body(created);
+    }
+
+    @DeleteMapping("/reservations/{id}")
+    public ResponseEntity&lt;Void&gt; delete(@PathVariable Long id) {
+        store.remove(id);
+        return ResponseEntity.noContent().build(); // 204 (멱등: 여러 번 호출해도 결과 동일)
+    }
+}</pre>
+
+    <h3>핵심 정리</h3>
+    <table>
+      <tr><th>메서드</th><th>용도</th><th>멱등성</th><th>여기서 확인</th></tr>
+      <tr><td><code>GET</code></td><td>조회</td><td>O</td><td>200 / 404</td></tr>
+      <tr><td><code>POST</code></td><td>생성</td><td>X</td><td>201 + Location</td></tr>
+      <tr><td><code>DELETE</code></td><td>삭제</td><td>O</td><td>204</td></tr>
+    </table>
+    <div class="note">멱등성은 <b>재시도 설계</b>의 핵심입니다. POST를 무지성 재시도하면 중복 결제가 날 수 있어 멱등키 패턴을 씁니다.</div>
+  </main>
+</div>
+
+<script src="assets/site.js"></script>
+<script>
+const BASE = "/api/rest";
+
+async function call(method, url, body) {
+  logTo("log", `→ ${method} ${url}` + (body ? ` ${JSON.stringify(body)}` : ""), "out");
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const loc = res.headers.get("Location");
+    logTo("log", `← ${res.status} ${res.statusText}` + (loc ? `  (Location: ${loc})` : ""), res.ok ? "in" : "err");
+    const text = await res.text();
+    if (text) logTo("log", `  body: ${text}`, "in");
+  } catch (e) {
+    logTo("log", `✗ 요청 실패: ${e.message}`, "err");
+  }
+}
+
+const listAll  = () => call("GET", `${BASE}/reservations`);
+const getOne   = () => call("GET", `${BASE}/reservations/${val("getId")}`);
+const deleteOne= () => call("DELETE", `${BASE}/reservations/${val("delId")}`);
+const tryStatus= () => call("GET", `${BASE}/status/${val("statusCode")}`);
+const createOne= () => call("POST", `${BASE}/reservations`, { hotelName: val("hotelName"), checkIn: val("checkIn") });
+
+function val(id){ return document.getElementById(id).value; }
+</script>
+</body>
+</html>

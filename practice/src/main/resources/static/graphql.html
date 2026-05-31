@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>7. GraphQL</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 7 · CONCEPT</span>
+    <h2 class="page-title">GraphQL</h2>
+    <p class="page-desc">클라이언트가 <b>필요한 데이터의 형태를 직접 명시</b>해서 요청하는 쿼리 언어. REST의 over/under-fetching을 해결합니다.</p>
+
+    <div class="note">
+      GraphQL은 HTTP 위에서 동작하므로 <code>fetch</code>로도 호출 가능합니다. 다만 별도 스키마/리졸버 설정이 필요해
+      이 실습 서버에는 포함하지 않았습니다. 아래 코드를 프로젝트에 추가하면 <code>/graphql</code> 및 <code>/graphiql</code>로 실습할 수 있습니다.
+    </div>
+
+    <h3>REST의 두 고질병</h3>
+    <table>
+      <tr><th>문제</th><th>설명</th></tr>
+      <tr><td>Over-fetching</td><td>이름만 필요한데 유저의 모든 필드를 받음</td></tr>
+      <tr><td>Under-fetching</td><td>화면 하나 그리려 여러 엔드포인트를 N번 호출</td></tr>
+    </table>
+
+    <h3>① 스키마 (SDL)</h3>
+<pre>type Query { user(id: ID!): User }
+type User {
+  id: ID!
+  name: String!
+  reservations: [Reservation!]!
+}
+type Reservation { id: ID!  checkIn: String!  hotel: Hotel! }
+type Hotel { id: ID!  name: String! }</pre>
+
+    <h3>② 클라이언트 쿼리 → 필요한 것만</h3>
+<pre>query {
+  user(id: 1) {
+    name
+    reservations { checkIn  hotel { name } }
+  }
+}</pre>
+
+    <h3>③ 서버 (Spring for GraphQL)</h3>
+<pre>@Controller
+public class UserGraphQlController {
+    @QueryMapping
+    public User user(@Argument Long id) { return userService.findById(id); }
+
+    @SchemaMapping(typeName = "User", field = "reservations")
+    public List&lt;Reservation&gt; reservations(User user) {
+        return reservationService.findByUserId(user.getId());
+    }
+}</pre>
+
+    <h3>fetch로 호출하는 형태</h3>
+<pre>fetch('/graphql', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ query: '{ user(id:1){ name } }' })
+});</pre>
+
+    <div class="note warn">
+      대가: <b>HTTP 캐싱 곤란</b>(POST 단일 엔드포인트), <b>N+1 문제</b>(→ DataLoader 배치), 쿼리 복잡도 제어 필요.
+      다양한 클라이언트가 서로 다른 데이터 조합을 요구하는 BFF에 강점. 자세한 내용은 강의 문서 08장.
+    </div>
+  </main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4. SSE 실습</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 4 · STREAM</span>
+    <h2 class="page-title">SSE (Server-Sent Events)</h2>
+    <p class="page-desc">하나의 HTTP 연결을 열어두고 <b>서버 → 클라이언트 단방향</b>으로 이벤트를 계속 흘려보냅니다. 알림/피드/시세/LLM 스트리밍에 최적.</p>
+
+    <div class="note tip">브라우저 내장 <code>EventSource</code>를 사용합니다. 연결이 끊기면 <b>자동 재연결</b>되는 것도 특징입니다.</div>
+
+    <h3>데모 ① 알림 브로드캐스트</h3>
+    <div class="grid cols-2">
+      <div class="card">
+        <h4>구독자 (EventSource)</h4>
+        <div class="row">
+          <button class="green" id="subBtn" onclick="subscribe()">구독 시작 (/subscribe)</button>
+          <button class="ghost" id="unsubBtn" onclick="unsubscribe()" disabled>구독 해제</button>
+          <span class="pill off" id="state">미연결</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:12px">받은 이벤트: <b id="recv">0</b></p>
+      </div>
+      <div class="card">
+        <h4>발신자 (서버 push 트리거)</h4>
+        <div class="row">
+          <div class="grow"><label>메시지</label><input id="msg" value="객실 업그레이드 쿠폰 도착!" style="width:100%" /></div>
+        </div>
+        <button style="margin-top:12px" onclick="broadcast()">POST /api/sse/broadcast</button>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:12px">구독 중인 <b>모든</b> 탭으로 전송됩니다. 이 페이지를 여러 탭에 띄워 확인해보세요.</p>
+      </div>
+    </div>
+
+    <h3>데모 ② 실시간 가격 스트림 (1초마다 자동 push, 10회)</h3>
+    <div class="card">
+      <div class="row">
+        <button class="blue" id="priceBtn" onclick="streamPrices()">가격 스트림 시작 (/prices)</button>
+        <span style="font-family:var(--mono);font-size:22px" id="price">₩ -</span>
+      </div>
+    </div>
+
+    <h3>이벤트 로그</h3>
+    <div class="row" style="margin-bottom:10px"><button class="ghost" onclick="clearLog('log')">로그 비우기</button></div>
+    <div id="log" class="console"></div>
+
+    <h3>서버 코드 (Spring · SseEmitter)</h3>
+<pre>@GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public SseEmitter subscribe() {
+    SseEmitter emitter = new SseEmitter(60 * 60 * 1000L);
+    emitters.add(emitter);
+    emitter.onCompletion(() -&gt; emitters.remove(emitter));
+    return emitter;
+}
+
+@PostMapping("/broadcast")
+public String broadcast(@RequestParam String message) {
+    for (SseEmitter e : emitters) {
+        e.send(SseEmitter.event().name("notification").data(message)); // 단방향 push
+    }
+    return "ok";
+}</pre>
+
+    <h3>클라이언트 코드 (EventSource)</h3>
+<pre>const es = new EventSource('/api/sse/subscribe');
+es.addEventListener('notification', (e) =&gt; render(e.data));
+es.onerror = () =&gt; { /* 브라우저가 자동 재연결 */ };</pre>
+
+    <div class="note warn">운영 주의: 프록시 버퍼링(<code>proxy_buffering off</code>), 다중 서버 fan-out(Redis Pub/Sub), heartbeat. 자세한 내용은 강의 문서 05장 참고.</div>
+  </main>
+</div>
+
+<script src="assets/site.js"></script>
+<script>
+let es = null, priceEs = null, recv = 0;
+
+function subscribe() {
+  if (es) return;
+  es = new EventSource("/api/sse/subscribe");
+  logTo("log", "→ EventSource 연결: /api/sse/subscribe", "out");
+
+  es.addEventListener("connect", (e) => logTo("log", `← [connect] ${e.data}`, "sys"));
+  es.addEventListener("notification", (e) => {
+    recv++; document.getElementById("recv").textContent = recv;
+    logTo("log", `← [notification] ${e.data}`, "in");
+  });
+  es.onopen = () => setState(true);
+  es.onerror = () => logTo("log", "⚠ 연결 오류/재연결 시도 (EventSource 자동 처리)", "err");
+}
+
+function unsubscribe() {
+  if (es) { es.close(); es = null; }
+  setState(false);
+  logTo("log", "구독 해제 (연결 종료)", "sys");
+}
+
+async function broadcast() {
+  const msg = encodeURIComponent(document.getElementById("msg").value);
+  const res = await fetch(`/api/sse/broadcast?message=${msg}`, { method: "POST" });
+  logTo("log", `→ POST /broadcast → ${await res.text()}`, "out");
+}
+
+function streamPrices() {
+  if (priceEs) priceEs.close();
+  priceEs = new EventSource("/api/sse/prices");
+  logTo("log", "→ 가격 스트림 시작: /api/sse/prices", "out");
+  priceEs.addEventListener("price", (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById("price").textContent = "₩ " + d.price.toLocaleString();
+    logTo("log", `← [price] tick ${d.tick}: ₩${d.price.toLocaleString()}`, "in");
+  });
+  priceEs.onerror = () => { logTo("log", "가격 스트림 종료(또는 재연결)", "sys"); priceEs.close(); };
+}
+
+function setState(on){ const s=document.getElementById("state"); s.textContent=on?"연결됨":"미연결"; s.className="pill "+(on?"on":"off"); document.getElementById("subBtn").disabled=on; document.getElementById("unsubBtn").disabled=!on; }
+</script>
+</body>
+</html>

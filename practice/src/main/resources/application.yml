@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: communication-practice
+  mvc:
+    # SSE 등 비동기 응답의 기본 타임아웃 (ms)
+    async:
+      request-timeout: 600000
+
+logging:
+  level:
+    com.yanolja.practice: DEBUG

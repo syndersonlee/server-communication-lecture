@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>5. WebSocket 실습</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 5 · DUPLEX</span>
+    <h2 class="page-title">WebSocket (STOMP)</h2>
+    <p class="page-desc">하나의 연결로 <b>양방향 실시간</b> 통신. 여기서는 STOMP 기반 채팅을 구현합니다. 여러 탭/브라우저를 띄워 대화해보세요.</p>
+
+    <div class="note tip">
+      <b>STOMP destination</b> · 보내기: <code>/app/chat.send</code> → 구독: <code>/topic/room</code>.
+      구독 중인 모두에게 브로드캐스트됩니다.
+    </div>
+
+    <h3>채팅 데모</h3>
+    <div class="card">
+      <div class="row" style="margin-bottom:14px">
+        <div class="grow"><label>닉네임</label><input id="sender" placeholder="홍길동" style="width:100%" /></div>
+        <button class="green" id="connBtn" onclick="connect()">연결 (CONNECT)</button>
+        <button class="ghost" id="discBtn" onclick="disconnect()" disabled>연결 종료</button>
+        <span class="pill off" id="state">연결 안 됨</span>
+      </div>
+
+      <div id="chat" class="chat-box"></div>
+
+      <div class="row" style="margin-top:14px">
+        <div class="grow"><input id="content" placeholder="메시지를 입력하고 Enter" style="width:100%" onkeydown="if(event.key==='Enter')send()" disabled /></div>
+        <button id="sendBtn" onclick="send()" disabled>전송</button>
+      </div>
+    </div>
+
+    <h3>연결 / 프레임 로그</h3>
+    <div class="row" style="margin-bottom:10px"><button class="ghost" onclick="clearLog('log')">로그 비우기</button></div>
+    <div id="log" class="console"></div>
+
+    <h3>서버 코드 (Spring)</h3>
+<pre>// 설정
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    public void registerStompEndpoints(StompEndpointRegistry r) {
+        r.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
+    }
+    public void configureMessageBroker(MessageBrokerRegistry r) {
+        r.enableSimpleBroker("/topic");
+        r.setApplicationDestinationPrefixes("/app");
+    }
+}
+
+// 핸들러
+@MessageMapping("/chat.send")    // 클라가 /app/chat.send 로 전송
+@SendTo("/topic/room")           // /topic/room 구독자 전체에게 브로드캐스트
+public ChatMessage send(ChatMessage msg) { return withTime(msg); }</pre>
+
+    <h3>핵심 정리</h3>
+    <table>
+      <tr><th></th><th>SSE</th><th>WebSocket</th></tr>
+      <tr><td>방향</td><td>서버→클라 단방향</td><td><b>양방향</b></td></tr>
+      <tr><td>프로토콜</td><td>HTTP 그대로</td><td>ws/wss (101 업그레이드)</td></tr>
+      <tr><td>적합</td><td>알림/피드/시세</td><td>채팅/게임/협업</td></tr>
+    </table>
+    <div class="note warn">다중 서버로 확장 시 내장 SimpleBroker로는 부족 → RabbitMQ/Redis 등 외부 브로커 relay 필요(강의 06장).</div>
+  </main>
+</div>
+
+<script src="assets/site.js"></script>
+<script>
+let stompClient = null;
+
+function connect() {
+  const sock = new SockJS("/ws");
+  stompClient = Stomp.over(sock);
+  stompClient.debug = (m) => logTo("log", m, "sys"); // STOMP 프레임을 로그로 확인
+
+  logTo("log", "→ CONNECT (SockJS 핸드셰이크 → WebSocket 업그레이드)", "out");
+  stompClient.connect({}, () => {
+    setState(true);
+    logTo("log", "← CONNECTED", "in");
+    stompClient.subscribe("/topic/room", (frame) => {
+      const m = JSON.parse(frame.body);
+      addMessage(m, m.sender === senderName());
+    });
+    logTo("log", "구독: /topic/room", "sys");
+  }, (err) => {
+    logTo("log", "✗ 연결 오류: " + err, "err");
+    setState(false);
+  });
+}
+
+function disconnect() {
+  if (stompClient) stompClient.disconnect(() => logTo("log", "← DISCONNECTED", "in"));
+  setState(false);
+}
+
+function send() {
+  const content = document.getElementById("content").value.trim();
+  if (!content || !stompClient) return;
+  const payload = { sender: senderName(), content };
+  stompClient.send("/app/chat.send", {}, JSON.stringify(payload));
+  logTo("log", `→ SEND /app/chat.send ${JSON.stringify(payload)}`, "out");
+  document.getElementById("content").value = "";
+}
+
+function addMessage(m, mine) {
+  const box = document.getElementById("chat");
+  const div = document.createElement("div");
+  div.className = "msg" + (mine ? " mine" : "");
+  div.innerHTML = `<div class="meta">${escapeHtml(m.sender)} · ${m.time}</div><span class="bubble">${escapeHtml(m.content)}</span>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function senderName() {
+  const v = document.getElementById("sender").value.trim();
+  return v || "익명";
+}
+
+function setState(on) {
+  const s = document.getElementById("state");
+  s.textContent = on ? "연결됨" : "연결 안 됨";
+  s.className = "pill " + (on ? "on" : "off");
+  document.getElementById("connBtn").disabled = on;
+  document.getElementById("discBtn").disabled = !on;
+  document.getElementById("content").disabled = !on;
+  document.getElementById("sendBtn").disabled = !on;
+}
+</script>
+</body>
+</html>

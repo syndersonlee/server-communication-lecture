@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>서버 통신 프로토콜 실습 · Spring Backend</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">ORIENTATION</span>
+    <h2 class="page-title">서버 통신 프로토콜 실습실</h2>
+    <p class="page-desc">
+      Spring 백엔드 개발자를 위한 인터랙티브 실습 환경입니다.
+      이 사이트는 <b>여러분이 직접 실행한 Spring Boot 서버</b> 위에서 동작하며,
+      각 통신 기법의 요청/응답을 화면에서 눈으로 확인할 수 있습니다.
+    </p>
+
+    <div class="note tip">
+      <b>지금 이 페이지가 보인다면</b> Spring Boot 서버가 정상적으로 떠 있는 것입니다 🎉
+      (<code>http://localhost:8080</code> 에서 서빙 중)
+    </div>
+
+    <h3>무엇을 실습하나요?</h3>
+    <div class="hero-grid">
+      <a class="hero-card" href="rest.html">
+        <div class="k">SYNC</div><h4>1. HTTP / REST</h4>
+        <p>GET/POST/DELETE, 상태코드, 멱등성을 직접 호출해보기</p>
+      </a>
+      <a class="hero-card" href="short-polling.html">
+        <div class="k">SYNC</div><h4>2. Short Polling</h4>
+        <p>주기적으로 서버에 묻기. 왜 비효율적인지 체감</p>
+      </a>
+      <a class="hero-card" href="long-polling.html">
+        <div class="k">SYNC</div><h4>3. Long Polling</h4>
+        <p>응답 보류(DeferredResult)로 실시간 흉내내기</p>
+      </a>
+      <a class="hero-card" href="sse.html">
+        <div class="k">STREAM</div><h4>4. SSE</h4>
+        <p>서버→클라 단방향 스트리밍. 알림/시세/LLM 스타일</p>
+      </a>
+      <a class="hero-card" href="websocket.html">
+        <div class="k">DUPLEX</div><h4>5. WebSocket</h4>
+        <p>STOMP 기반 실시간 양방향 채팅</p>
+      </a>
+      <a class="hero-card" href="grpc.html">
+        <div class="k">CONCEPT</div><h4>6~8. gRPC / GraphQL / 메시징</h4>
+        <p>브라우저 직접 실습은 어려운 기법의 개념과 Spring 코드</p>
+      </a>
+    </div>
+
+    <h3>실습 흐름 (추천)</h3>
+    <div class="card">
+      <ul class="steps">
+        <li><b>REST</b>부터 시작해 HTTP의 기본 요청-응답을 확인합니다.</li>
+        <li><b>Short → Long Polling</b>으로 "서버가 먼저 못 보내는" 한계를 우회하는 과정을 체감합니다.</li>
+        <li><b>SSE</b>로 서버 단방향 스트리밍을, <b>WebSocket</b>으로 진짜 양방향 통신을 경험합니다.</li>
+        <li>마지막으로 <b>gRPC/GraphQL/메시징</b> 개념 페이지로 큰 그림을 완성합니다.</li>
+      </ul>
+    </div>
+
+    <h3>아키텍처</h3>
+    <div class="card">
+<pre>브라우저 (이 사이트, localhost:8080)
+   │  fetch / EventSource / WebSocket(STOMP)
+   ▼
+Spring Boot 서버 (동일 출처, CORS 걱정 없음)
+   ├─ RestDemoController     →  /api/rest/**
+   ├─ PollingController      →  /api/polling/**
+   ├─ SseController          →  /api/sse/**
+   └─ ChatController(STOMP)  →  /ws , /app/** , /topic/**</pre>
+    </div>
+
+    <div class="note">
+      각 실습 페이지는 <b>이론 요약 → 인터랙티브 데모 → 서버 코드 → 핵심 정리</b> 순서로 구성됩니다.
+      함께 제공되는 <code>../README.md</code> 강의 문서(00~10장)와 같이 보면 가장 효과적입니다.
+    </div>
+  </main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

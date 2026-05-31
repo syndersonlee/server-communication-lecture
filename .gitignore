@@ -1,0 +1,19 @@
+# Build output
+practice/build/
+practice/.gradle/
+build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.classpath
+*.project
+.settings/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

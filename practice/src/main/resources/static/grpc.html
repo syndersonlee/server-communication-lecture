@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>6. gRPC</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 6 · CONCEPT</span>
+    <h2 class="page-title">gRPC</h2>
+    <p class="page-desc">HTTP/2 + Protocol Buffers 기반 고성능 RPC. 주로 <b>서버 ↔ 서버(MSA 내부)</b> 통신에 사용합니다.</p>
+
+    <div class="note warn">
+      <b>왜 브라우저에서 직접 실습하지 않나요?</b> 브라우저는 HTTP/2 프레임을 raw로 제어할 수 없어 gRPC를 직접 호출할 수 없습니다(별도 <code>gRPC-Web</code> + 프록시 필요).
+      그래서 이 페이지는 개념과 Spring 코드 위주로 정리합니다. 실습은 아래 명령으로 로컬에서 해볼 수 있어요.
+    </div>
+
+    <h3>세 가지 기둥</h3>
+    <table>
+      <tr><th>요소</th><th>설명</th></tr>
+      <tr><td>HTTP/2</td><td>멀티플렉싱·스트리밍·헤더압축 기본 탑재</td></tr>
+      <tr><td>Protocol Buffers</td><td>바이너리 직렬화 → JSON보다 작고 빠름</td></tr>
+      <tr><td>IDL(.proto)</td><td>계약을 먼저 정의 → 다국어 코드 자동 생성</td></tr>
+    </table>
+
+    <h3>① 계약 정의 (.proto)</h3>
+<pre>syntax = "proto3";
+option java_package = "com.yanolja.grpc.user";
+
+service UserService {
+  rpc GetUser (GetUserRequest) returns (UserResponse);           // Unary
+  rpc ListUsers (ListUsersRequest) returns (stream UserResponse); // Server Streaming
+}
+message GetUserRequest { int64 id = 1; }
+message UserResponse { int64 id = 1; string name = 2; string email = 3; }</pre>
+
+    <h3>② 서버 구현 (Spring)</h3>
+<pre>@GrpcService
+public class UserServiceImpl extends UserServiceGrpc.UserServiceImplBase {
+    @Override
+    public void getUser(GetUserRequest req, StreamObserver&lt;UserResponse&gt; obs) {
+        obs.onNext(UserResponse.newBuilder().setId(req.getId()).setName("홍길동").build());
+        obs.onCompleted();
+    }
+}</pre>
+
+    <h3>③ 클라이언트 호출</h3>
+<pre>@GrpcClient("user-service")
+private UserServiceGrpc.UserServiceBlockingStub stub;
+
+UserResponse res = stub.getUser(GetUserRequest.newBuilder().setId(9001).build());
+// 원격 호출이지만 로컬 메서드처럼 사용</pre>
+
+    <h3>4가지 통신 방식</h3>
+    <table>
+      <tr><th>방식</th><th>설명</th></tr>
+      <tr><td>Unary</td><td>일반 요청-응답 (REST 유사)</td></tr>
+      <tr><td>Server Streaming</td><td>서버가 결과를 나눠서 계속 push</td></tr>
+      <tr><td>Client Streaming</td><td>클라가 여러 번 보내고 마지막에 응답</td></tr>
+      <tr><td>Bidirectional</td><td>양방향 동시 스트리밍</td></tr>
+    </table>
+
+    <h3>로컬에서 빠르게 만져보기</h3>
+    <div class="card">
+      <p style="margin-top:0">CLI 도구 <code>grpcurl</code>로 gRPC 서버를 직접 호출할 수 있습니다.</p>
+<pre>brew install grpcurl
+grpcurl -plaintext localhost:9090 list
+grpcurl -plaintext -d '{"id":9001}' localhost:9090 user.UserService/GetUser</pre>
+    </div>
+
+    <div class="note">언제? 서버 간 고성능·저지연, polyglot MSA. 외부 공개 API는 보통 REST 병행. 자세한 내용은 강의 문서 07장.</div>
+  </main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

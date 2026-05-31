@@ -1,0 +1,6 @@
+plugins {
+    // 빌드에 필요한 JDK(21)를 자동으로 내려받아 사용하기 위한 toolchain resolver
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'communication-practice'

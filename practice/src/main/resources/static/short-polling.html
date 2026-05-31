@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2. Short Polling 실습</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 2 · SYNC</span>
+    <h2 class="page-title">Short Polling</h2>
+    <p class="page-desc">클라이언트가 <b>일정 주기마다</b> "새 거 있어?"라고 묻는 가장 단순한 실시간 흉내내기.</p>
+
+    <div class="note">
+      아래에서 폴링을 시작한 뒤, 오른쪽 <b>이벤트 발행</b> 버튼을 눌러보세요.
+      이벤트가 없을 때도 계속 요청이 나가는 것(=낭비)을 로그에서 확인할 수 있습니다.
+    </div>
+
+    <h3>인터랙티브 데모</h3>
+    <div class="grid cols-2">
+      <div class="card">
+        <h4>① 클라이언트 (폴러)</h4>
+        <div class="row">
+          <div class="grow">
+            <label>폴링 주기 (초)</label>
+            <input id="interval" type="number" value="2" min="1" style="width:100%" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="green" id="startBtn" onclick="startPolling()">폴링 시작</button>
+          <button class="ghost" id="stopBtn" onclick="stopPolling()" disabled>중지</button>
+          <span class="pill off" id="state">중지됨</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:14px">
+          총 요청 수: <b id="reqCount">0</b> · 빈 응답: <b id="emptyCount">0</b> · 받은 이벤트: <b id="eventCount">0</b>
+        </p>
+      </div>
+
+      <div class="card">
+        <h4>② 이벤트 발행 (다른 사용자/시스템 역할)</h4>
+        <div class="row">
+          <div class="grow">
+            <label>메시지</label>
+            <input id="msg" value="새 예약이 들어왔어요!" style="width:100%" />
+          </div>
+        </div>
+        <button style="margin-top:12px" onclick="publish()">POST /api/polling/publish</button>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:14px">
+          이 버튼을 누른 "직후"가 아니라, 다음 폴링 주기에 데이터가 도착합니다 → <b>최대 주기만큼 지연</b>.
+        </p>
+      </div>
+    </div>
+
+    <h3>요청 / 응답 로그</h3>
+    <div class="row" style="margin-bottom:10px"><button class="ghost" onclick="clearLog('log')">로그 비우기</button></div>
+    <div id="log" class="console"></div>
+
+    <h3>서버 코드 (Spring)</h3>
+<pre>@GetMapping("/events")
+public List&lt;Event&gt; shortPoll(@RequestParam(defaultValue = "0") long sinceId) {
+    // sinceId 이후 발생한 이벤트만 반환 (없으면 빈 배열)
+    return recent.stream().filter(e -&gt; e.id() &gt; sinceId).toList();
+}</pre>
+
+    <h3>핵심 정리</h3>
+    <div class="note warn">
+      <b>단점이 그대로 보입니다.</b> 데이터가 없어도 주기마다 요청이 나가 대부분 "빈 응답" → 트래픽/서버 낭비.
+      또 발행과 수신 사이에 <b>최대 한 주기만큼 지연</b>이 생깁니다. → 다음 실습 <a href="long-polling.html">Long Polling</a>이 이를 개선합니다.
+    </div>
+  </main>
+</div>
+
+<script src="assets/site.js"></script>
+<script>
+let timer = null, sinceId = 0;
+let reqCount = 0, emptyCount = 0, eventCount = 0;
+
+function startPolling() {
+  if (timer) return;
+  const sec = Math.max(1, parseInt(document.getElementById("interval").value || "2"));
+  setState(true);
+  logTo("log", `폴링 시작 (${sec}초 주기)`, "sys");
+  poll();
+  timer = setInterval(poll, sec * 1000);
+}
+
+function stopPolling() {
+  clearInterval(timer); timer = null;
+  setState(false);
+  logTo("log", "폴링 중지", "sys");
+}
+
+async function poll() {
+  reqCount++; document.getElementById("reqCount").textContent = reqCount;
+  logTo("log", `→ GET /api/polling/events?sinceId=${sinceId}`, "out");
+  try {
+    const res = await fetch(`/api/polling/events?sinceId=${sinceId}`);
+    const data = await res.json();
+    if (data.length === 0) {
+      emptyCount++; document.getElementById("emptyCount").textContent = emptyCount;
+      logTo("log", `← 200 (빈 응답 — 새 이벤트 없음)`, "in");
+    } else {
+      data.forEach(e => {
+        sinceId = Math.max(sinceId, e.id);
+        eventCount++;
+        logTo("log", `← 200 이벤트 수신: "${e.message}" @${e.time}`, "in");
+      });
+      document.getElementById("eventCount").textContent = eventCount;
+    }
+  } catch (e) {
+    logTo("log", `✗ ${e.message}`, "err");
+  }
+}
+
+async function publish() {
+  const msg = encodeURIComponent(document.getElementById("msg").value);
+  await fetch(`/api/polling/publish?message=${msg}`, { method: "POST" });
+  logTo("log", `★ 이벤트 발행됨 (다음 폴링 때 도착)`, "sys");
+}
+
+function setState(on) {
+  const s = document.getElementById("state");
+  s.textContent = on ? "폴링 중" : "중지됨";
+  s.className = "pill " + (on ? "on" : "off");
+  document.getElementById("startBtn").disabled = on;
+  document.getElementById("stopBtn").disabled = !on;
+}
+</script>
+</body>
+</html>

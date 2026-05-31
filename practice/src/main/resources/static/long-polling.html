@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3. Long Polling 실습</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-mount"></div>
+  <main class="content">
+    <span class="page-tag">실습 3 · SYNC</span>
+    <h2 class="page-title">Long Polling</h2>
+    <p class="page-desc">요청을 보내면 서버가 <b>새 이벤트가 생길 때까지 응답을 보류(hold)</b>. 이벤트가 생기면 즉시 응답 → 다시 요청.</p>
+
+    <div class="note tip">
+      Short Polling과 비교해보세요. 여기서는 <b>이벤트를 발행한 "즉시"</b> 응답이 도착합니다(지연 거의 없음).
+      그리고 평소엔 요청이 "대기" 상태로 떠 있어 빈 응답 낭비가 적습니다.
+    </div>
+
+    <h3>인터랙티브 데모</h3>
+    <div class="grid cols-2">
+      <div class="card">
+        <h4>① 클라이언트 (롱 폴러)</h4>
+        <div class="row">
+          <button class="green" id="startBtn" onclick="start()">롱 폴링 시작</button>
+          <button class="ghost" id="stopBtn" onclick="stop()" disabled>중지</button>
+          <span class="pill off" id="state">중지됨</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:14px">
+          현재 상태: <b id="phase">-</b><br/>
+          받은 이벤트: <b id="eventCount">0</b> · 타임아웃(빈 응답): <b id="timeoutCount">0</b>
+        </p>
+      </div>
+      <div class="card">
+        <h4>② 이벤트 발행</h4>
+        <div class="row">
+          <div class="grow"><label>메시지</label><input id="msg" value="체크인 24시간 전입니다" style="width:100%" /></div>
+        </div>
+        <button style="margin-top:12px" onclick="publish()">POST /api/polling/publish</button>
+        <p style="font-size:13px;color:var(--text-dim);margin-top:14px">발행 즉시 대기 중인 요청으로 응답이 날아갑니다.</p>
+      </div>
+    </div>
+
+    <h3>요청 / 응답 로그</h3>
+    <div class="row" style="margin-bottom:10px"><button class="ghost" onclick="clearLog('log')">로그 비우기</button></div>
+    <div id="log" class="console"></div>
+
+    <h3>서버 코드 (Spring · DeferredResult)</h3>
+<pre>private final List&lt;DeferredResult&lt;List&lt;Event&gt;&gt;&gt; waiting = new CopyOnWriteArrayList&lt;&gt;();
+
+@GetMapping("/long-poll")
+public DeferredResult&lt;List&lt;Event&gt;&gt; longPoll() {
+    // 30초 후 타임아웃되면 빈 배열 반환 → 클라가 재요청
+    DeferredResult&lt;List&lt;Event&gt;&gt; deferred = new DeferredResult&lt;&gt;(30_000L, List.of());
+    waiting.add(deferred);
+    deferred.onCompletion(() -&gt; waiting.remove(deferred));
+    return deferred; // ★ 톰캣 워커 스레드는 즉시 반납됨 (스레드 점유 X)
+}
+
+@PostMapping("/publish")
+public Event publish(@RequestParam String message) {
+    Event event = ...;
+    waiting.forEach(d -&gt; d.setResult(List.of(event))); // 대기 요청들에 즉시 응답
+    return event;
+}</pre>
+
+    <h3>핵심 정리</h3>
+    <div class="note">
+      <b><code>DeferredResult</code></b>의 핵심: 응답을 보류해도 <b>서블릿 스레드를 점유하지 않습니다</b>(Servlet 3.0 비동기).
+      덕분에 많은 대기 연결을 적은 스레드로 감당. 다만 매번 새 HTTP 요청을 맺는 오버헤드는 남아 → 다음은 <a href="sse.html">SSE</a>.
+    </div>
+  </main>
+</div>
+
+<script src="assets/site.js"></script>
+<script>
+let running = false, eventCount = 0, timeoutCount = 0;
+
+function start() {
+  if (running) return;
+  running = true; setState(true);
+  logTo("log", "롱 폴링 시작", "sys");
+  loop();
+}
+function stop() { running = false; setState(false); setPhase("중지됨"); logTo("log", "중지", "sys"); }
+
+async function loop() {
+  while (running) {
+    setPhase("서버 응답 대기 중...(보류)");
+    logTo("log", "→ GET /api/polling/long-poll  (응답 올 때까지 대기)", "out");
+    try {
+      const res = await fetch("/api/polling/long-poll");
+      const data = await res.json();
+      if (!running) break;
+      if (data.length === 0) {
+        timeoutCount++; document.getElementById("timeoutCount").textContent = timeoutCount;
+        logTo("log", "← 200 (30초 타임아웃, 빈 응답) → 즉시 재요청", "in");
+      } else {
+        data.forEach(e => { eventCount++; logTo("log", `← 200 이벤트 즉시 수신: "${e.message}" @${e.time}`, "in"); });
+        document.getElementById("eventCount").textContent = eventCount;
+      }
+    } catch (e) {
+      if (running) logTo("log", `✗ ${e.message}`, "err");
+      break;
+    }
+  }
+}
+
+async function publish() {
+  const msg = encodeURIComponent(document.getElementById("msg").value);
+  await fetch(`/api/polling/publish?message=${msg}`, { method: "POST" });
+  logTo("log", "★ 이벤트 발행 → 대기 중인 요청으로 즉시 전달", "sys");
+}
+
+function setState(on){ const s=document.getElementById("state"); s.textContent=on?"실행 중":"중지됨"; s.className="pill "+(on?"on":"off"); document.getElementById("startBtn").disabled=on; document.getElementById("stopBtn").disabled=!on; }
+function setPhase(t){ document.getElementById("phase").textContent=t; }
+</script>
+</body>
+</html>
