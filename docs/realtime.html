@@ -127,15 +127,67 @@
       </section>
 
       <section class="block" id="usecase">
-        <h2 class="section-title reveal">실전 사용 케이스</h2>
-        <div class="grid c2" style="margin-top:20px">
-          <div class="uc reveal"><div class="uci">🔔</div><div><h4>실시간 알림 · 피드</h4><p>예약 확정, 쿠폰 도착, 좋아요 알림. 서버→클라 단방향이라 <strong>SSE</strong>가 최적.</p><span class="who">SSE</span></div></div>
-          <div class="uc reveal"><div class="uci">📈</div><div><h4>실시간 시세 · 대시보드</h4><p>가격/재고/모니터링 수치를 계속 흘려보냄. <strong>SSE</strong>(+백프레셔 필요 시 WebFlux).</p><span class="who">SSE</span></div></div>
-          <div class="uc reveal"><div class="uci">🤖</div><div><h4>LLM 토큰 스트리밍</h4><p>생성되는 대로 화면에 출력. ChatGPT류의 표준이 <strong>SSE</strong>.</p><span class="who">SSE</span></div></div>
-          <div class="uc reveal"><div class="uci">💬</div><div><h4>채팅 · 1:1 상담</h4><p>양쪽이 수시로 주고받음. <strong>WebSocket(STOMP)</strong>.</p><span class="who">WebSocket</span></div></div>
-          <div class="uc reveal"><div class="uci">🎮</div><div><h4>게임 · 실시간 협업</h4><p>커서 공유, 공동 편집, 낮은 지연의 양방향. <strong>WebSocket</strong>(또는 WebRTC).</p><span class="who">WebSocket</span></div></div>
-          <div class="uc reveal"><div class="uci">🏚️</div><div><h4>레거시/제약 환경</h4><p>구형 브라우저·특정 프록시로 SSE/WS 불가 시 <strong>Long Polling</strong> 폴백.</p><span class="who">Long Polling</span></div></div>
+        <h2 class="section-title reveal">실전 사용 케이스 — 실제로 어디에 쓰이나</h2>
+        <p class="section-lead reveal">기법별로 "현업에서 어떤 제품·시나리오에 실제로 쓰이고, <strong>왜 그 기법을 골랐는지</strong>"를 모두 정리했습니다.</p>
+
+        <div class="grid c2 reveal" style="margin-top:8px">
+          <div class="uc"><div class="uci">🔔</div><div><h4>실시간 알림 · 피드</h4><p>예약 확정, 쿠폰 도착, 좋아요 알림. 서버→클라 단방향이라 <strong>SSE</strong>가 최적.</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">📈</div><div><h4>실시간 시세 · 대시보드</h4><p>가격/재고/모니터링 수치를 계속 흘려보냄. <strong>SSE</strong>(+백프레셔 필요 시 WebFlux).</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">🤖</div><div><h4>LLM 토큰 스트리밍</h4><p>생성되는 대로 화면에 출력. ChatGPT류의 표준이 <strong>SSE</strong>.</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">💬</div><div><h4>채팅 · 1:1 상담</h4><p>양쪽이 수시로 주고받음. <strong>WebSocket(STOMP)</strong>.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">🎮</div><div><h4>게임 · 실시간 협업</h4><p>커서 공유, 공동 편집, 낮은 지연의 양방향. <strong>WebSocket</strong>(또는 WebRTC).</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">🏚️</div><div><h4>레거시/제약 환경</h4><p>구형 브라우저·특정 프록시로 SSE/WS 불가 시 <strong>Long Polling</strong> 폴백.</p><span class="who">Long Polling</span></div></div>
         </div>
+
+        <!-- Short Polling deep dive -->
+        <h3 class="reveal" style="margin-top:36px">🔁 Short Polling — 실제 사용</h3>
+        <p class="reveal">"가끔, 단순하게, 결과만 확인하면 될 때." 인프라 변경 없이 가장 빨리 붙일 수 있어 <strong>비동기 작업의 상태 확인</strong>에 광범위하게 쓰입니다.</p>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>💳 결제 상태 확인</h4><p style="margin:0;font-size:14px">결제창(리다이렉트/팝업) 이후 "결제 완료됐나?"를 수 초 간격으로 조회. PG/카드사 콜백 지연을 흡수.</p></div>
+          <div class="card flat"><h4>⚙️ 비동기 잡(Job) 결과</h4><p style="margin:0;font-size:14px">영상 인코딩·대용량 리포트/엑셀 생성·AI 이미지 생성처럼 오래 걸리는 작업을 <code>jobId</code>로 받아 <code>GET /jobs/{id}</code> 폴링.</p></div>
+          <div class="card flat"><h4>🏗️ CI/CD · 배포 상태</h4><p style="margin:0;font-size:14px">빌드/배포 파이프라인 진행 상태를 주기 조회(예: GitHub Actions 상태 확인 UI).</p></div>
+          <div class="card flat"><h4>📱 모바일 백그라운드 동기화</h4><p style="margin:0;font-size:14px">메일 새로고침, 주기적 데이터 동기화 등 저빈도 갱신.</p></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p><strong>왜 Short Polling인가</strong> — 구현이 가장 단순(일반 GET), 서버 상태를 안 들고 있어도 됨, 방화벽·프록시 무난, 갱신 주기가 수 초~수십 초로 느슨하면 충분. <u>실시간성이 필요해지는 순간 SSE/WS로 갈아타야</u> 합니다.</p></div>
+
+        <!-- Long Polling deep dive -->
+        <h3 class="reveal" style="margin-top:36px">⏳ Long Polling — 실제 사용</h3>
+        <p class="reveal">"준실시간이 필요한데 SSE/WebSocket을 못 쓸 때"의 현실적 타협안. 과거 웹 채팅·알림의 표준이었고 지금도 <strong>폴백 경로</strong>로 살아 있습니다.</p>
+        <div class="grid c2 reveal">
+          <div class="card flat"><h4>💬 초기 웹 메신저</h4><p style="margin:0;font-size:14px">WebSocket 보급 이전의 Facebook Chat·Gmail Chat 등 웹 채팅 알림이 long polling 기반이었음.</p></div>
+          <div class="card flat"><h4>🏢 엄격한 기업 환경</h4><p style="margin:0;font-size:14px">WS 업그레이드를 막는 사내 프록시/구형 브라우저에서 준실시간 알림을 받아야 할 때.</p></div>
+          <div class="card flat"><h4>🔌 폴백 트랜스포트</h4><p style="margin:0;font-size:14px">Socket.IO·SockJS가 WS 불가 시 자동으로 long polling으로 폴백하는 안전망.</p></div>
+          <div class="card flat"><h4>📨 이벤트 대기형 API</h4><p style="margin:0;font-size:14px">"새 메시지 올 때까지 기다렸다 응답"하는 메시지 큐 소비형 엔드포인트.</p></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p><strong>왜 Long Polling인가</strong> — HTTP만으로 빈 응답 없이 준실시간을 흉내. 다만 매번 새 요청이라 오버헤드가 있고 보류 연결 관리가 필요 → 가능하면 SSE/WS가 우선, Long Polling은 <u>호환성 폴백</u>으로 두는 것이 정석.</p></div>
+
+        <!-- SSE deep dive -->
+        <h3 class="reveal" style="margin-top:36px">📡 SSE — 실제 사용</h3>
+        <p class="reveal">"서버가 일방적으로 계속 흘려보내는" 거의 모든 화면. 기존 HTTP 인프라를 그대로 쓰면서 자동 재연결까지 공짜라, <strong>읽기 전용 실시간</strong>의 사실상 표준입니다.</p>
+        <div class="grid c2 reveal">
+          <div class="uc"><div class="uci">🤖</div><div><h4>LLM 응답 스트리밍</h4><p>ChatGPT·Claude·Gemini·Perplexity 등 토큰이 생성되는 대로 흘려보내는 스트리밍의 표준.</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">📈</div><div><h4>금융 시세 티커</h4><p>주가·환율·코인 가격을 읽기 전용으로 계속 갱신(주문 같은 양방향이 없으면 SSE로 충분).</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">🔔</div><div><h4>알림 센터 · 활동 피드</h4><p>새 알림·댓글·멘션을 서버가 push. 인증/세션을 일반 HTTP와 공유하기 쉬움.</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">📊</div><div><h4>모니터링 대시보드 · 로그 tail</h4><p>지표·로그를 실시간 스트림(예: Grafana Live, 배포/빌드 로그 실시간 출력).</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">⏳</div><div><h4>진행률 표시</h4><p>업로드/변환/배포 진행률을 % 또는 단계로 흘려보냄.</p><span class="who">SSE</span></div></div>
+          <div class="uc"><div class="uci">🏆</div><div><h4>라이브 스코어 · 개표</h4><p>스포츠 중계 점수, 선거 개표 현황처럼 다수에게 같은 데이터를 push.</p><span class="who">SSE</span></div></div>
+        </div>
+        <div class="callout tip reveal"><span class="emoji">💡</span><p><strong>왜 SSE인가</strong> — 방향이 서버→클라 단방향이면 WebSocket의 양방향 복잡도가 불필요. 게다가 ① 그냥 HTTP라 LB·프록시·인증·HTTP/2를 그대로 사용, ② <code>EventSource</code>가 끊김을 자동 재연결 + <code>Last-Event-ID</code>로 누락 복구, ③ 구현이 단순. <u>대용량 동시 스트림이면 WebFlux로 백프레셔</u>를 더하면 됩니다.</p></div>
+
+        <!-- WebSocket deep dive -->
+        <h3 class="reveal" style="margin-top:36px">🔌 WebSocket — 실제 사용</h3>
+        <p class="reveal">"양쪽이 수시로, 낮은 지연으로 주고받아야 할 때." 채팅부터 협업·게임·트레이딩까지 <strong>인터랙티브 실시간</strong>의 핵심.</p>
+        <div class="grid c2 reveal">
+          <div class="uc"><div class="uci">💬</div><div><h4>채팅 · 메신저 · 상담</h4><p>Slack·Discord·라인/카카오 웹, 고객센터 실시간 상담. 입력/수신이 동시에 빈번.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">📝</div><div><h4>실시간 협업 편집</h4><p>Google Docs 동시 편집, Figma·Notion·Miro의 멀티 커서/실시간 반영.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">💹</div><div><h4>거래소 호가 · 주문</h4><p>실시간 호가창·체결 스트림 + 주문 전송(양방향). 지연이 곧 손익.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">🎮</div><div><h4>실시간 게임 · 로비</h4><p>브라우저 멀티플레이(.io 류), 매칭 로비, 실시간 대전 상태 동기화.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">🛍️</div><div><h4>라이브 커머스 · 스트리밍 채팅</h4><p>방송 중 실시간 댓글·하트·구매 알림 등 고빈도 양방향 상호작용.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc"><div class="uci">📍</div><div><h4>실시간 위치 · 경매</h4><p>배달 라이더 위치 추적, 실시간 입찰/경매처럼 즉시성이 중요한 양방향.</p><span class="who">WebSocket</span></div></div>
+        </div>
+        <div class="callout tip reveal"><span class="emoji">💡</span><p><strong>왜 WebSocket인가</strong> — 한 번 연결하면 양방향으로 가벼운 프레임을 계속 주고받아 <u>요청마다 헤더를 새로 붙이는 비용이 없고 지연이 낮음</u>. 채팅·협업은 STOMP pub/sub으로 방(room) 모델을 얹고, 다중 서버로 키우면 <a href="ts-realtime.html#multi-server">외부 브로커 relay</a>가 필요합니다. 초저지연·P2P가 필요하면 <strong>WebRTC</strong>를 함께 검토하세요.</p></div>
+
+        <div class="callout info reveal"><span class="emoji">🧭</span><p><strong>한 줄 정리</strong> — 결과만 가끔 확인 → <strong>Short Polling</strong>, 준실시간인데 WS 불가 → <strong>Long Polling</strong>, 서버가 일방적으로 흘려보냄 → <strong>SSE</strong>, 양쪽이 수시로 주고받음 → <strong>WebSocket</strong>.</p></div>
       </section>
 
       <section class="block" id="tools">
