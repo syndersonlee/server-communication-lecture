@@ -161,6 +161,69 @@ spring:
         </div>
       </section>
 
+      <section class="block" id="fit">
+        <h2 class="section-title reveal">어떤 프로토콜과 잘 어울리나</h2>
+        <p class="section-lead reveal">WebFlux의 본질은 <strong>논블로킹 + 스트리밍 + 백프레셔</strong>입니다. 그래서 "장기 연결·스트리밍·팬아웃" 성격의 프로토콜과 궁합이 좋고, 단건 요청/응답이나 블로킹 드라이버와는 이점이 줄어듭니다.</p>
+
+        <div class="diagram reveal">
+          <div class="flow">
+            <div class="node green">SSE / WebSocket<br/>RSocket / 스트리밍</div>
+            <div class="arrow">⇉<span class="lbl">Flux로 그대로</span></div>
+            <div class="node blue">WebFlux<br/>이벤트 루프</div>
+            <div class="arrow">⇉<span class="lbl">논블로킹</span></div>
+            <div class="node green">R2DBC · WebClient<br/>reactor-kafka</div>
+          </div>
+          <p style="text-align:center;margin:14px 0 0;font-size:13.5px;color:var(--gray-600)">스트림이 들어오고(프로토콜) → 스트림으로 처리(연산자) → 논블로킹으로 나간다(드라이버). 한 곳이라도 블로킹이면 효과가 무너집니다.</p>
+        </div>
+
+        <div class="fitgrid reveal">
+          <div class="fit lead-best">
+            <div class="fh"><span class="fn">SSE (Server-Sent Events)</span><span class="fitbadge best">⭐ 최고 궁합</span></div>
+            <p><code>Flux&lt;T&gt;</code>를 그대로 반환하면 이벤트 스트림이 됩니다. LLM 토큰 스트리밍·실시간 피드처럼 <strong>다수 클라이언트에 길게 흘려보내는</strong> 작업에 이상적. 백프레셔로 느린 클라도 안전.</p>
+          </div>
+          <div class="fit lead-best">
+            <div class="fh"><span class="fn">RSocket</span><span class="fitbadge best">⭐ 최고 궁합</span></div>
+            <p>리액티브 스트림을 <strong>프로토콜 차원에서</strong> 구현. request-stream/channel과 <strong>네트워크 레벨 백프레셔</strong>를 기본 지원 → WebFlux와 가장 자연스러운 짝.</p>
+          </div>
+          <div class="fit lead-best">
+            <div class="fh"><span class="fn">HTTP 스트리밍 (NDJSON / chunked)</span><span class="fitbadge best">⭐ 최고 궁합</span></div>
+            <p><code>Flux&lt;T&gt;</code> + <code>application/x-ndjson</code>으로 대용량 결과를 <strong>한 건씩 흘리며</strong> 메모리 폭증 없이 전송. 배치 export·로그 스트림에 적합.</p>
+          </div>
+          <div class="fit lead-good">
+            <div class="fh"><span class="fn">WebSocket</span><span class="fitbadge good">👍 좋음</span></div>
+            <p>핸들러가 <code>Flux&lt;WebSocketMessage&gt;</code> 기반이라 양방향 스트림을 리액티브로 처리. <strong>수만 동시 연결</strong>을 적은 스레드로 버티는 데 강점.</p>
+          </div>
+          <div class="fit lead-good">
+            <div class="fh"><span class="fn">gRPC</span><span class="fitbadge good">👍 좋음</span></div>
+            <p>HTTP/2 멀티플렉싱 + 서버/양방향 스트리밍이 리액티브와 잘 맞음. <code>reactive-grpc</code>(Salesforce) 어댑터로 <code>Mono/Flux</code> 시그니처를 그대로 사용 가능.</p>
+          </div>
+          <div class="fit lead-good">
+            <div class="fh"><span class="fn">GraphQL Subscription</span><span class="fitbadge good">👍 좋음</span></div>
+            <p>Spring for GraphQL이 리액티브 기반. 구독(subscription)을 <code>Flux</code>로 매핑해 실시간 업데이트를 스트리밍.</p>
+          </div>
+          <div class="fit lead-good">
+            <div class="fh"><span class="fn">비동기 메시징 (Kafka/RabbitMQ)</span><span class="fitbadge good">👍 좋음</span></div>
+            <p><code>reactor-kafka</code>·Reactor RabbitMQ로 <strong>백프레셔 있는 소비</strong>가 가능. 팬아웃·중계(게이트웨이) 워크로드와 잘 맞음.</p>
+          </div>
+          <div class="fit lead-meh">
+            <div class="fh"><span class="fn">일반 REST (단건 요청/응답)</span><span class="fitbadge meh">➖ 가능하지만 이점 적음</span></div>
+            <p>되긴 하지만 단순 CRUD엔 리액티브의 복잡도 대비 이득이 작습니다. 고동시성만 필요하면 <strong>MVC + 가상 스레드</strong>가 더 쉬운 선택.</p>
+          </div>
+          <div class="fit lead-bad">
+            <div class="fh"><span class="fn">JDBC / JPA (블로킹 DB)</span><span class="fitbadge bad">⚠️ 궁합 나쁨</span></div>
+            <p>블로킹 드라이버라 이벤트 루프를 막습니다. WebFlux와 쓰려면 <strong>R2DBC로 교체</strong>하거나 <code>boundedElastic</code> 스케줄러로 격리해야 — 그럴 바엔 MVC가 단순.</p>
+          </div>
+          <div class="fit lead-bad">
+            <div class="fh"><span class="fn">CPU 바운드 작업</span><span class="fitbadge bad">⚠️ 궁합 나쁨</span></div>
+            <p>이미지 처리·암호화 같은 CPU 집약 작업은 이벤트 루프를 점유합니다. 프로토콜과 무관하게 별도 스케줄러/전용 풀로 분리하세요.</p>
+          </div>
+        </div>
+
+        <div class="callout warn reveal"><span class="emoji">⚠️</span><p><strong>황금률</strong> — "프로토콜이 스트리밍/논블로킹이어도, 그 안에서 호출하는 <u>드라이버 한 줄이 블로킹</u>이면 전부 무너집니다." WebFlux 효과를 보려면 <strong>프로토콜 + DB + 외부호출까지 end-to-end 논블로킹</strong>이어야 합니다.</p></div>
+
+        <div class="callout info reveal"><span class="emoji">💡</span><p>반대로 <strong>가상 스레드(Java 21+)</strong>는 블로킹 코드(JDBC/JPA)를 그대로 두고도 고동시성을 얻습니다. "스트리밍·백프레셔가 핵심" → WebFlux, "기존 블로킹 스택 + 동시성만" → MVC + 가상 스레드로 갈라집니다.</p></div>
+      </section>
+
       <section class="block" id="tools">
         <h2 class="section-title reveal">세팅 & 도구</h2>
         <div class="toolgrid reveal">
