@@ -16,6 +16,7 @@
         <p class="page-eyebrow reveal">CHAPTER 6</p>
         <h2 class="section-title reveal">WebFlux & 코루틴</h2>
         <p class="section-lead reveal">시선을 서버 안쪽으로 — "이 통신들을 처리하는 <strong>서버의 동시성 모델</strong>을 어떻게 가져갈 것인가?"</p>
+        <div class="metarow reveal"><span>⏱ 약 30분</span><span>🎯 사용 케이스 · 도구 · 에러 대응</span></div>
       </section>
 
       <section class="block" id="problem">
@@ -157,6 +158,48 @@ spring:
             <li><h4>백프레셔/스트리밍이 필요한가?</h4><p style="margin:0">예 → <strong>WebFlux</strong>(Java) 또는 <strong>코루틴 Flow</strong>(Kotlin)</p></li>
             <li><h4>블로킹 코드를 끝까지 논블로킹으로 바꿀 수 있나?</h4><p style="margin:0">어렵다/팀 미숙 → <strong>MVC + 가상 스레드</strong> (쉬운 고동시성)<br/>가능/이미 리액티브 → <strong>WebFlux 또는 코루틴</strong></p></li>
           </ol>
+        </div>
+      </section>
+
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">세팅 & 도구</h2>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">spring-boot-starter-webflux</span><span class="kind lib">LIB</span><p>Reactor Netty 기반 논블로킹 스택. MVC와 동시 사용은 지양(둘 중 하나).</p></div></div>
+          <div class="tool"><div><span class="tn">R2DBC</span><span class="kind lib">LIB</span><p>논블로킹 DB 드라이버. JDBC를 쓰면 WebFlux 이점이 사라진다.</p></div></div>
+          <div class="tool"><div><span class="tn">BlockHound</span><span class="kind lib">LIB</span><p>이벤트 루프에서 <strong>블로킹 호출을 런타임에 탐지</strong>. WebFlux의 필수 안전장치.</p></div></div>
+          <div class="tool"><div><span class="tn">Reactor 디버깅</span><span class="kind lib">LIB</span><p><code>Hooks.onOperatorDebug()</code> / <code>checkpoint()</code>로 의미 있는 스택 트레이스 확보.</p></div></div>
+          <div class="tool"><div><span class="tn">kotlinx-coroutines + Flow</span><span class="kind lib">LIB</span><p>Kotlin에서 <code>suspend</code> 컨트롤러·<code>Flow</code> 스트리밍.</p></div></div>
+          <div class="tool"><div><span class="tn">가상 스레드 (Java 21+)</span><span class="kind svc">JVM</span><p><code>spring.threads.virtual.enabled=true</code>로 MVC에서 손쉬운 고동시성.</p></div></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧪</span><p>리액티브 코드는 <strong>StepVerifier</strong>로 테스트하세요 — 발행 순서·완료·에러·백프레셔를 검증할 수 있습니다.</p></div>
+      </section>
+
+      <section class="block" id="errors">
+        <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <div class="errcase reveal">
+          <span class="sig">갑자기 전체 응답이 느려지고 처리량 급락</span>
+          <div class="row"><span class="lab cause">원인</span><p>이벤트 루프 스레드에서 <strong>블로킹 호출</strong>(JDBC, 동기 SDK, <code>Thread.sleep</code>) 발생 → 소수의 루프 스레드가 막힘.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>블로킹 작업은 <code>Schedulers.boundedElastic()</code>로 격리, R2DBC/논블로킹 클라이언트로 교체, <strong>BlockHound</strong>로 탐지.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">의미를 알 수 없는 Reactor 스택 트레이스</span>
+          <div class="row"><span class="lab cause">원인</span><p>비동기 연산자 체인은 호출 스택이 끊겨 어디서 났는지 보기 어려움.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>checkpoint("설명")</code> 삽입, 개발 환경에서 <code>Hooks.onOperatorDebug()</code>, reactor-tools 적용.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">아무 일도 안 일어남 (요청해도 응답 없음)</span>
+          <div class="row"><span class="lab cause">원인</span><p>리액티브 시퀀스를 <strong>구독(subscribe)하지 않음</strong>. "구독해야 흐른다"는 lazy 특성.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>컨트롤러는 <code>Mono</code>/<code>Flux</code>를 <strong>반환</strong>(프레임워크가 구독). 임의로 <code>.subscribe()</code>를 흘려 만들지 말 것.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">OutOfMemory / 데이터 폭주</span>
+          <div class="row"><span class="lab cause">원인</span><p>빠른 생산자 + 느린 소비자인데 백프레셔 미적용.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>onBackpressureBuffer/Drop</code>, <code>limitRate()</code>로 흐름 제어. 무한 스트림에 적절한 경계.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">컨텍스트(MDC/트랜잭션/시큐리티)가 사라짐</span>
+          <div class="row"><span class="lab cause">원인</span><p>스레드가 계속 바뀌어 ThreadLocal 기반 컨텍스트가 전파 안 됨.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>Reactor <strong>Context</strong> 사용, <code>@Transactional</code>은 리액티브 트랜잭션 매니저, 시큐리티는 ReactiveSecurityContext.</p></div>
         </div>
       </section>
 

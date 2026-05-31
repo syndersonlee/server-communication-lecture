@@ -16,6 +16,7 @@
         <p class="page-eyebrow reveal">CHAPTER 3</p>
         <h2 class="section-title reveal">실시간 통신</h2>
         <p class="section-lead reveal">"서버는 먼저 말을 걸 수 없다"는 HTTP의 한계를 극복하는 4단계 진화.</p>
+        <div class="metarow reveal"><span>⏱ 약 45분 (3개 기법)</span><span>🎯 기법별 사용 케이스 · 도구 · 에러 대응</span></div>
         <div class="diagram reveal">
           <div class="flow">
             <div class="node">Short Polling</div><div class="arrow">→</div>
@@ -123,6 +124,65 @@
           </table>
         </div>
         <div class="callout info reveal"><span class="emoji">🧭</span><p><strong>고르는 법</strong>: 서버가 보내기만 하면 → <strong>SSE</strong>. 서로 주고받아야 하면 → <strong>WebSocket</strong>. 굳이 양방향의 복잡도를 떠안지 마세요.</p></div>
+      </section>
+
+      <section class="block" id="usecase">
+        <h2 class="section-title reveal">실전 사용 케이스</h2>
+        <div class="grid c2" style="margin-top:20px">
+          <div class="uc reveal"><div class="uci">🔔</div><div><h4>실시간 알림 · 피드</h4><p>예약 확정, 쿠폰 도착, 좋아요 알림. 서버→클라 단방향이라 <strong>SSE</strong>가 최적.</p><span class="who">SSE</span></div></div>
+          <div class="uc reveal"><div class="uci">📈</div><div><h4>실시간 시세 · 대시보드</h4><p>가격/재고/모니터링 수치를 계속 흘려보냄. <strong>SSE</strong>(+백프레셔 필요 시 WebFlux).</p><span class="who">SSE</span></div></div>
+          <div class="uc reveal"><div class="uci">🤖</div><div><h4>LLM 토큰 스트리밍</h4><p>생성되는 대로 화면에 출력. ChatGPT류의 표준이 <strong>SSE</strong>.</p><span class="who">SSE</span></div></div>
+          <div class="uc reveal"><div class="uci">💬</div><div><h4>채팅 · 1:1 상담</h4><p>양쪽이 수시로 주고받음. <strong>WebSocket(STOMP)</strong>.</p><span class="who">WebSocket</span></div></div>
+          <div class="uc reveal"><div class="uci">🎮</div><div><h4>게임 · 실시간 협업</h4><p>커서 공유, 공동 편집, 낮은 지연의 양방향. <strong>WebSocket</strong>(또는 WebRTC).</p><span class="who">WebSocket</span></div></div>
+          <div class="uc reveal"><div class="uci">🏚️</div><div><h4>레거시/제약 환경</h4><p>구형 브라우저·특정 프록시로 SSE/WS 불가 시 <strong>Long Polling</strong> 폴백.</p><span class="who">Long Polling</span></div></div>
+        </div>
+      </section>
+
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">세팅 & 도구</h2>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">curl -N</span><span class="kind cli">CLI</span><p>SSE 스트림 확인: <code>curl -N localhost:8080/api/sse/prices</code> 로 이벤트가 흐르는지 즉시 검증.</p></div></div>
+          <div class="tool"><div><span class="tn">websocat / wscat</span><span class="kind cli">CLI</span><p>WebSocket 수동 연결·메시지 송수신 테스트. <code>websocat ws://localhost:8080/ws</code>.</p></div></div>
+          <div class="tool"><div><span class="tn">브라우저 DevTools</span><span class="kind gui">GUI</span><p>Network → WS 탭에서 프레임 송수신, EventStream 탭에서 SSE 이벤트 확인.</p></div></div>
+          <div class="tool"><div><span class="tn">SockJS + STOMP.js</span><span class="kind lib">LIB</span><p>WS 미지원 환경 폴백 + pub/sub 클라이언트. 본 강의 실습 앱에서 사용.</p></div></div>
+          <div class="tool"><div><span class="tn">Redis Pub/Sub</span><span class="kind svc">SVC</span><p>다중 서버 환경에서 SSE/WS 이벤트를 전 인스턴스로 fan-out.</p></div></div>
+          <div class="tool"><div><span class="tn">RabbitMQ STOMP relay</span><span class="kind svc">SVC</span><p>WebSocket 대규모 확장 시 내장 브로커 대신 외부 브로커 relay.</p></div></div>
+        </div>
+        <div class="callout warn reveal"><span class="emoji">⚙️</span><p><strong>프록시 설정 필수</strong>: Nginx 앞단이면 SSE/WS에 대해 <code>proxy_buffering off</code>, <code>proxy_read_timeout</code> 상향, WS는 <code>Upgrade</code>/<code>Connection</code> 헤더 전달, LB의 idle timeout을 길게.</p></div>
+      </section>
+
+      <section class="block" id="errors">
+        <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <div class="errcase reveal">
+          <span class="sig">SSE 이벤트가 한참 뒤 몰아서 도착</span>
+          <div class="row"><span class="lab cause">원인</span><p>프록시(Nginx 등)가 응답을 버퍼링. 실시간성이 깨짐.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>proxy_buffering off</code> + 응답 헤더 <code>X-Accel-Buffering: no</code>. 주기적 heartbeat(<code>:ping</code>)로 연결 유지.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">SSE 연결이 일정 시간마다 끊김</span>
+          <div class="row"><span class="lab cause">원인</span><p>LB/서버 idle timeout, HTTP/1.1 브라우저 연결 수 제한(도메인당 6개) 초과.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>EventSource 자동 재연결 + <code>Last-Event-ID</code>로 이어받기 구현, 타임아웃 상향, <strong>HTTP/2 적용</strong>으로 연결 수 제한 회피.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">WebSocket: Error during handshake (200/403)</span>
+          <div class="row"><span class="lab cause">원인</span><p>프록시가 <code>Upgrade</code> 헤더를 전달 안 함, 또는 CORS/Origin 거부.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>프록시에 <code>proxy_set_header Upgrade $http_upgrade; Connection "upgrade";</code> 추가, 서버 <code>setAllowedOriginPatterns</code> 설정.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">메시지가 일부 사용자에게만 안 감 (다중 서버)</span>
+          <div class="row"><span class="lab cause">원인</span><p>A서버 구독자에게 B서버에서 발생한 이벤트가 전달 안 됨(내장 SimpleBroker는 인스턴스 로컬).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>Redis Pub/Sub</strong> 또는 <strong>외부 STOMP 브로커 relay</strong>로 서버 간 메시지 공유. 세션 정보 공유 설계.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">연결 수 폭증 → 스레드/메모리 고갈</span>
+          <div class="row"><span class="lab cause">원인</span><p>BIO(연결당 스레드) 모델로 수만 동시 연결 처리.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>비동기(Netty/WebFlux) 모델로 적은 스레드로 많은 연결 처리(6장). 죽은 연결은 ping/pong heartbeat로 정리.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">SSE에서 emitter.send() 시 IOException</span>
+          <div class="row"><span class="lab cause">원인</span><p>클라이언트가 이미 연결을 끊었는데 서버가 전송 시도.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>try/catch</code>로 잡아 해당 emitter를 컬렉션에서 제거. <code>onCompletion/onTimeout/onError</code> 콜백에서 정리.</p></div>
+        </div>
       </section>
 
       <div class="pager">

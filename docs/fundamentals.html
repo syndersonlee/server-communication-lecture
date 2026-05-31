@@ -102,6 +102,34 @@
         </div>
       </section>
 
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">진단 도구 & 에러 대응</h2>
+        <p class="section-lead reveal">"연결이 안 돼요"의 90%는 아래 도구로 원인을 찾습니다.</p>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">ping / traceroute</span><span class="kind cli">CLI</span><p>대상까지 도달 가능한지·어디서 끊기는지 경로 추적.</p></div></div>
+          <div class="tool"><div><span class="tn">nslookup / dig</span><span class="kind cli">CLI</span><p>DNS가 올바른 IP로 해석되는지 확인.</p></div></div>
+          <div class="tool"><div><span class="tn">nc (netcat) / telnet</span><span class="kind cli">CLI</span><p><code>nc -zv host 443</code> — 특정 포트가 열려 있는지(방화벽) 즉시 확인.</p></div></div>
+          <div class="tool"><div><span class="tn">lsof / netstat / ss</span><span class="kind cli">CLI</span><p>어떤 프로세스가 어떤 포트를 점유하는지, 연결 상태(TIME_WAIT 등) 확인.</p></div></div>
+          <div class="tool"><div><span class="tn">tcpdump / Wireshark</span><span class="kind cli">CLI</span><p>패킷 레벨로 핸드셰이크·재전송·RST를 직접 관찰.</p></div></div>
+          <div class="tool"><div><span class="tn">openssl s_client</span><span class="kind cli">CLI</span><p><code>openssl s_client -connect host:443</code> — 인증서 체인·TLS 협상 점검.</p></div></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">Connection refused</span>
+          <div class="row"><span class="lab cause">원인</span><p>대상 포트에서 리스닝하는 프로세스가 없음(서버 미기동/포트 오타).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>ss -tlnp</code>로 리스닝 확인, 서버 기동/포트 점검. 방화벽은 보통 "거부"가 아닌 "타임아웃"으로 나타남.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">Connection timed out</span>
+          <div class="row"><span class="lab cause">원인</span><p>방화벽/보안그룹이 패킷을 드롭, 또는 경로상 네트워크 단절.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>보안그룹/방화벽 규칙 확인, <code>nc -zv</code>·<code>traceroute</code>로 어디서 막히는지 추적.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">TIME_WAIT 소켓이 과다하게 쌓임</span>
+          <div class="row"><span class="lab cause">원인</span><p>매 요청마다 연결을 새로 맺고 끊음(커넥션 미재사용).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>Keep-Alive/커넥션 풀로 연결 재사용, 클라이언트 풀 크기 튜닝. (TIME_WAIT 자체는 정상 동작)</p></div>
+        </div>
+      </section>
+
       <section class="block" id="summary">
         <h2 class="section-title reveal">핵심 요약</h2>
         <div class="card reveal">

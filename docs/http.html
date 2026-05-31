@@ -16,6 +16,7 @@
         <p class="page-eyebrow reveal">CHAPTER 2</p>
         <h2 class="section-title reveal">HTTP & HTTPS</h2>
         <p class="section-lead reveal">가장 많이 쓰는 프로토콜. 버전 진화와 보안(TLS)까지 정확히 이해합니다.</p>
+        <div class="metarow reveal"><span>⏱ 약 30분</span><span>🎯 사용 케이스 · 도구 · 에러 대응 포함</span></div>
         <div class="grid c2" style="margin-top:20px">
           <div class="card flat reveal"><h4>📨 요청-응답 모델</h4><p style="margin:0;font-size:15px">클라이언트가 물어봐야 서버가 답한다. 서버가 먼저 못 보냄 → 실시간 기술의 출발점.</p></div>
           <div class="card flat reveal"><h4>🧩 무상태 (Stateless)</h4><p style="margin:0;font-size:15px">각 요청은 독립적. 확장은 쉽지만 로그인 상태는 쿠키/세션/JWT로 따로 관리.</p></div>
@@ -142,6 +143,81 @@
           <div class="card flat"><h4>🤝 mTLS</h4><p style="margin:0;font-size:15px">서버·클라 양방향 인증. MSA 내부, 제로 트러스트 보안에 사용.</p></div>
         </div>
         <div class="callout warn reveal"><span class="emoji">⚠️</span><p><strong>인증서 만료</strong> 장애는 정말 흔합니다. Let's Encrypt 등으로 자동 갱신 + 모니터링 필수. 실무에선 LB/게이트웨이에서 TLS 종료가 일반적.</p></div>
+      </section>
+
+      <section class="block" id="usecase">
+        <h2 class="section-title reveal">실전 사용 케이스</h2>
+        <p class="section-lead reveal">"언제 HTTP/REST를 쓰고, 언제 다른 걸 고려하나"를 구체적인 상황으로.</p>
+        <div class="grid c2" style="margin-top:20px">
+          <div class="uc reveal"><div class="uci">🏨</div><div><h4>공개 REST API (앱/웹 백엔드)</h4><p>예약 생성·조회·취소처럼 표준 CRUD. 캐싱·문서화·호환성이 중요할 때 1순위.</p><span class="who">대부분의 외부 API</span></div></div>
+          <div class="uc reveal"><div class="uci">🖼️</div><div><h4>정적 리소스 · CDN</h4><p>이미지/JS/CSS 배포. <code>Cache-Control</code>·<code>ETag</code>로 캐시 최적화, HTTP/2로 다중 리소스 병렬 로딩.</p><span class="who">프론트 자원</span></div></div>
+          <div class="uc reveal"><div class="uci">🔗</div><div><h4>서버→서버 동기 호출</h4><p>결제 PG, 외부 SaaS API 호출. 단, 사내 MSA 다수 호출은 gRPC가 더 효율적(4장).</p><span class="who">외부 연동</span></div></div>
+          <div class="uc reveal"><div class="uci">📥</div><div><h4>파일 업로드/다운로드</h4><p><code>multipart/form-data</code> 업로드, <code>Range</code> 요청으로 이어받기/스트리밍 다운로드.</p><span class="who">미디어 처리</span></div></div>
+        </div>
+        <div class="callout info reveal"><span class="emoji">🧭</span><p>"실시간으로 계속 받아야 한다"면 HTTP 대신 SSE/WebSocket(3장), "필요한 필드만"이면 GraphQL(4장)을 고려하세요.</p></div>
+      </section>
+
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">세팅 & 도구</h2>
+        <h3 class="reveal">API 테스트 · 디버깅</h3>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">curl</span><span class="kind cli">CLI</span><p>기본기. <code>-v</code>로 헤더, <code>-i</code>로 응답 헤더, <code>-w</code>로 타이밍 측정.</p></div></div>
+          <div class="tool"><div><span class="tn">HTTPie</span><span class="kind cli">CLI</span><p><code>http GET :8080/api</code> — JSON 친화적이고 사람이 읽기 좋은 출력.</p></div></div>
+          <div class="tool"><div><span class="tn">Postman / Insomnia / Bruno</span><span class="kind gui">GUI</span><p>컬렉션·환경변수·테스트 스크립트. 팀 공유와 회귀 테스트에 유용.</p></div></div>
+          <div class="tool"><div><span class="tn">브라우저 DevTools</span><span class="kind gui">GUI</span><p>Network 탭에서 상태코드·헤더·타이밍·HTTP 버전(Protocol 열) 확인.</p></div></div>
+        </div>
+        <h3 class="reveal">부하 테스트 · 관측</h3>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">k6 / JMeter / Gatling</span><span class="kind cli">LOAD</span><p>처리량·p99 지연·에러율 측정. 커넥션 풀·타임아웃 튜닝의 근거.</p></div></div>
+          <div class="tool"><div><span class="tn">Wireshark / tcpdump</span><span class="kind cli">CLI</span><p>패킷 레벨로 핸드셰이크·재전송·TLS 협상 분석.</p></div></div>
+          <div class="tool"><div><span class="tn">Spring Boot Actuator + Micrometer</span><span class="kind lib">LIB</span><p><code>/actuator/metrics</code>로 <code>http.server.requests</code> 지연·상태코드 분포 수집.</p></div></div>
+          <div class="tool"><div><span class="tn">Resilience4j</span><span class="kind lib">LIB</span><p>타임아웃·재시도·서킷브레이커·벌크헤드를 선언적으로 적용.</p></div></div>
+        </div>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">필수 클라이언트 설정 (타임아웃 · 풀)</span></div>
+          <pre><code><span class="c">// WebClient: 연결/응답 타임아웃과 커넥션 풀은 "반드시" 명시</span>
+<span class="t">HttpClient</span> httpClient = <span class="t">HttpClient</span>.<span class="f">create</span>(
+        <span class="t">ConnectionProvider</span>.<span class="f">builder</span>(<span class="s">"pool"</span>).<span class="f">maxConnections</span>(<span class="n">200</span>).<span class="f">build</span>())
+    .<span class="f">option</span>(<span class="t">ChannelOption</span>.<span class="t">CONNECT_TIMEOUT_MILLIS</span>, <span class="n">2000</span>)
+    .<span class="f">responseTimeout</span>(<span class="t">Duration</span>.<span class="f">ofSeconds</span>(<span class="n">3</span>));
+<span class="c">// 타임아웃이 없으면 장애 시 스레드/커넥션이 무한 점유되어 전체 장애로 번진다</span></code></pre>
+        </div>
+      </section>
+
+      <section class="block" id="errors">
+        <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <p class="section-lead reveal">실무에서 자주 만나는 증상 → 원인 → 대응.</p>
+
+        <div class="errcase reveal">
+          <span class="sig">504 Gateway Timeout</span>
+          <div class="row"><span class="lab cause">원인</span><p>업스트림(앱) 응답이 LB/게이트웨이 타임아웃을 초과. 느린 쿼리·외부 호출 지연·스레드 풀 고갈.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>느린 구간 프로파일링 → 쿼리/인덱스 개선, 클라이언트 타임아웃을 게이트웨이보다 짧게 설정, 서킷브레이커로 빠른 실패, 필요한 작업은 비동기(5장)로 분리.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">502 Bad Gateway</span>
+          <div class="row"><span class="lab cause">원인</span><p>업스트림이 죽었거나 비정상 응답. 배포 중 인스턴스 교체, OOM, 커넥션 강제 종료.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>헬스체크/그레이스풀 셧다운 설정, 롤링 배포 시 커넥션 드레이닝, keep-alive 타임아웃을 LB보다 길게 맞춰 idle 커넥션 재사용 충돌 방지.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">CORS policy: No 'Access-Control-Allow-Origin'</span>
+          <div class="row"><span class="lab cause">원인</span><p>브라우저가 다른 출처(origin) 요청을 차단. 프리플라이트(OPTIONS) 미허용.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>서버에 <code>@CrossOrigin</code> 또는 글로벌 <code>CorsConfiguration</code>으로 허용 출처·메서드·헤더 명시. 운영에선 <code>*</code> 대신 도메인 화이트리스트.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">SSLHandshakeException: PKIX path building failed</span>
+          <div class="row"><span class="lab cause">원인</span><p>JVM truststore에 상대 서버의 CA 인증서가 없음(사내 자체 서명 인증서 등).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>CA 인증서를 truststore에 추가(<code>keytool -importcert</code>), 인증서 체인 누락 점검, 도메인-인증서 CN/SAN 일치 확인.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">429 Too Many Requests</span>
+          <div class="row"><span class="lab cause">원인</span><p>서버 측 레이트 리밋 초과(상대 API의 쿼터 포함).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>Retry-After</code> 헤더 존중 + <strong>지수 백오프 & 지터</strong> 재시도. 호출 측은 토큰버킷으로 자체 스로틀링.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">중복 처리 (재시도로 인한 이중 결제)</span>
+          <div class="row"><span class="lab cause">원인</span><p>멱등하지 않은 POST를 네트워크 오류 후 재시도.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>Idempotency-Key</strong> 헤더로 서버가 중복 요청을 한 번만 처리하도록 보장.</p></div>
+        </div>
       </section>
 
       <div class="pager">

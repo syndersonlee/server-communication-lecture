@@ -16,6 +16,7 @@
         <p class="page-eyebrow reveal">CHAPTER 5</p>
         <h2 class="section-title reveal">비동기 메시징</h2>
         <p class="section-lead reveal">"메시지를 던져놓고 내 할 일 하기." 동기 호출의 강결합과 장애 전파를 끊습니다.</p>
+        <div class="metarow reveal"><span>⏱ 약 30분</span><span>🎯 사용 케이스 · 도구 · 에러 대응</span></div>
       </section>
 
       <section class="block" id="why">
@@ -82,6 +83,72 @@ kafkaTemplate.<span class="f">send</span>(<span class="s">"orders"</span>, <span
           <div class="card flat"><h4>🔢 순서 보장</h4><p style="margin:0;font-size:15px">전역 순서 어려움 → Kafka 파티션 키로 부분 보장</p></div>
           <div class="card flat"><h4>💀 실패 처리</h4><p style="margin:0;font-size:15px">실패 메시지를 <strong>DLQ</strong>로 보내 재처리/분석</p></div>
           <div class="card flat"><h4>🔗 정합성</h4><p style="margin:0;font-size:15px">DB 저장+발행을 함께 → <strong>Transactional Outbox</strong></p></div>
+        </div>
+      </section>
+
+      <section class="block" id="usecase">
+        <h2 class="section-title reveal">실전 사용 케이스</h2>
+        <div class="grid c2" style="margin-top:20px">
+          <div class="uc reveal"><div class="uci">🧾</div><div><h4>주문 후속 처리 (이벤트 발행)</h4><p>주문 완료 → 정산·알림·재고·추천을 각 서비스가 독립 소비. <strong>Kafka</strong>로 디커플링.</p><span class="who">Kafka</span></div></div>
+          <div class="uc reveal"><div class="uci">📊</div><div><h4>로그·클릭스트림 수집/분석</h4><p>대용량 이벤트를 보존하며 여러 컨슈머가 재처리. <strong>Kafka</strong>의 본령.</p><span class="who">Kafka</span></div></div>
+          <div class="uc reveal"><div class="uci">⚙️</div><div><h4>작업 분배 (워커 큐)</h4><p>이미지 리사이징·메일 발송 등 무거운 작업을 워커가 나눠 처리. <strong>RabbitMQ</strong>.</p><span class="who">RabbitMQ</span></div></div>
+          <div class="uc reveal"><div class="uci">🔀</div><div><h4>복잡한 라우팅</h4><p>조건별로 다른 큐로 분기(topic/headers exchange). <strong>RabbitMQ</strong>의 강점.</p><span class="who">RabbitMQ</span></div></div>
+          <div class="uc reveal"><div class="uci">🌡️</div><div><h4>IoT 센서 · 모바일 푸시</h4><p>저전력·저대역폭 디바이스의 경량 pub/sub. <strong>MQTT</strong>.</p><span class="who">MQTT</span></div></div>
+          <div class="uc reveal"><div class="uci">🚦</div><div><h4>트래픽 완충 (Peak Shaving)</h4><p>급증 트래픽을 큐로 받아 뒤에서 천천히 소비 → 다운스트림 보호.</p><span class="who">공통</span></div></div>
+        </div>
+      </section>
+
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">세팅 & 도구</h2>
+        <div class="code reveal">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="fname">로컬 브로커 띄우기 (docker)</span></div>
+          <pre><code><span class="c"># RabbitMQ (관리 UI http://localhost:15672, guest/guest)</span>
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+
+<span class="c"># Kafka (KRaft 단일 노드)</span>
+docker run -d --name kafka -p 9092:9092 apache/kafka:latest</code></pre>
+        </div>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">kcat (kafkacat)</span><span class="kind cli">CLI</span><p>토픽 produce/consume·offset 확인. Kafka 디버깅 만능 도구.</p></div></div>
+          <div class="tool"><div><span class="tn">AKHQ / Conduktor / Redpanda Console</span><span class="kind gui">GUI</span><p>토픽·컨슈머 그룹·lag·메시지 조회를 시각화.</p></div></div>
+          <div class="tool"><div><span class="tn">RabbitMQ Management UI</span><span class="kind gui">GUI</span><p>큐 깊이·소비율·언액드(unacked)·DLQ 모니터링.</p></div></div>
+          <div class="tool"><div><span class="tn">spring-kafka / spring-amqp</span><span class="kind lib">LIB</span><p><code>@KafkaListener</code> / <code>@RabbitListener</code> + 템플릿.</p></div></div>
+          <div class="tool"><div><span class="tn">Schema Registry (Avro/Protobuf)</span><span class="kind svc">SVC</span><p>메시지 스키마 버전 관리·호환성 보장.</p></div></div>
+          <div class="tool"><div><span class="tn">consumer lag 모니터링</span><span class="kind svc">SVC</span><p>Burrow / Prometheus exporter로 처리 지연 경보.</p></div></div>
+        </div>
+      </section>
+
+      <section class="block" id="errors">
+        <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">Consumer Lag 폭증 (소비가 생산을 못 따라감)</span>
+          <div class="row"><span class="lab cause">원인</span><p>컨슈머 처리 속도 < 생산 속도. 무거운 처리, 파티션 부족.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>파티션 수 ↑ + 컨슈머 인스턴스 ↑</strong>(병렬성), 처리 로직 경량화/배치, 무거운 작업은 비동기 분리. lag 알람 설정.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">메시지 중복 처리 (이중 결제/이중 적립)</span>
+          <div class="row"><span class="lab cause">원인</span><p>at-least-once 전달 + 컨슈머 재시작/리밸런싱 시 재처리.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>멱등 컨슈머</strong>: 처리한 메시지 ID를 저장해 중복 스킵, 또는 upsert/조건부 업데이트로 멱등하게 설계.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">CommitFailedException / 리밸런싱 반복</span>
+          <div class="row"><span class="lab cause">원인</span><p><code>max.poll.interval.ms</code> 안에 처리 못 끝내 그룹에서 추방 → 리밸런싱 폭풍.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>한 번에 가져오는 레코드 수(<code>max.poll.records</code>) 축소, 처리 시간 단축, 인터벌 상향, 무거운 작업은 별도 스레드.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">처리 실패 메시지가 무한 재시도 (poison message)</span>
+          <div class="row"><span class="lab cause">원인</span><p>특정 메시지가 계속 예외 → 컨슈머가 그 자리에서 멈춤.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>재시도 횟수 제한 후 <strong>DLQ(Dead Letter Queue)</strong>로 보내 격리·분석. 재처리 파이프라인 구성.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">순서가 뒤바뀐 채 처리됨</span>
+          <div class="row"><span class="lab cause">원인</span><p>여러 파티션/컨슈머로 분산되어 전역 순서 미보장.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>순서가 중요한 키(예: 주문ID)를 <strong>파티션 키</strong>로 지정 → 같은 키는 같은 파티션 → 순서 보장.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">DB는 커밋됐는데 메시지가 발행 안 됨 (정합성 깨짐)</span>
+          <div class="row"><span class="lab cause">원인</span><p>DB 트랜잭션과 메시지 발행이 분리되어 한쪽만 성공.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>Transactional Outbox</strong>: 같은 DB 트랜잭션에 outbox 테이블 기록 → 별도 릴레이가 발행. (또는 CDC/Debezium)</p></div>
         </div>
       </section>
 

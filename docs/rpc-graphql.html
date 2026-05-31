@@ -16,6 +16,7 @@
         <p class="page-eyebrow reveal">CHAPTER 4</p>
         <h2 class="section-title reveal">gRPC & GraphQL</h2>
         <p class="section-lead reveal">REST를 넘어서 — 서버 간 고성능 통신(gRPC)과 유연한 데이터 조회(GraphQL).</p>
+        <div class="metarow reveal"><span>⏱ 약 40분 (2개 기법)</span><span>🎯 사용 케이스 · 도구 · 에러 대응</span></div>
       </section>
 
       <section class="block" id="grpc">
@@ -88,6 +89,77 @@
           </table>
         </div>
         <div class="callout info reveal"><span class="emoji">🧭</span><p>대형 서비스의 전형: <strong>외부(앱/웹)는 REST(+GraphQL), 내부 MSA 간은 gRPC.</strong></p></div>
+      </section>
+
+      <section class="block" id="usecase">
+        <h2 class="section-title reveal">실전 사용 케이스</h2>
+        <div class="grid c2" style="margin-top:20px">
+          <div class="uc reveal"><div class="uci">🔗</div><div><h4>MSA 내부 서비스 간 호출</h4><p>예약→재고→가격 서비스의 저지연 다수 호출. 바이너리+HTTP/2로 효율 극대화.</p><span class="who">gRPC</span></div></div>
+          <div class="uc reveal"><div class="uci">🌐</div><div><h4>Polyglot(다국어) 환경</h4><p>Java·Go·Python 서비스가 하나의 <code>.proto</code> 계약을 공유. 타입 불일치를 컴파일에서 차단.</p><span class="who">gRPC</span></div></div>
+          <div class="uc reveal"><div class="uci">🎥</div><div><h4>스트리밍 통신</h4><p>실시간 위치 전송, 대용량 결과 분할 전송 등 양방향/서버 스트리밍.</p><span class="who">gRPC</span></div></div>
+          <div class="uc reveal"><div class="uci">📱</div><div><h4>모바일 BFF · 다양한 화면</h4><p>화면마다 필요한 필드가 달라 over/under-fetching이 심할 때 한 번의 쿼리로 조합.</p><span class="who">GraphQL</span></div></div>
+          <div class="uc reveal"><div class="uci">🧩</div><div><h4>여러 백엔드 데이터 통합</h4><p>여러 MSA/외부 API를 하나의 그래프로 묶는 게이트웨이(BFF/Federation).</p><span class="who">GraphQL</span></div></div>
+          <div class="uc reveal"><div class="uci">⚠️</div><div><h4>단순 CRUD엔 과함</h4><p>표준 자원 CRUD·강력한 HTTP 캐싱이 필요하면 그냥 REST가 낫다.</p><span class="who">REST 권장</span></div></div>
+        </div>
+      </section>
+
+      <section class="block" id="tools">
+        <h2 class="section-title reveal">세팅 & 도구</h2>
+        <h3 class="reveal">gRPC</h3>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">protoc / buf</span><span class="kind cli">CLI</span><p><code>.proto</code> 컴파일·코드 생성. <strong>buf</strong>는 린트·호환성 검사·breaking change 탐지까지.</p></div></div>
+          <div class="tool"><div><span class="tn">grpcurl</span><span class="kind cli">CLI</span><p>gRPC의 curl. <code>grpcurl -plaintext localhost:9090 list</code> 로 서비스 탐색·호출.</p></div></div>
+          <div class="tool"><div><span class="tn">grpc-spring-boot-starter</span><span class="kind lib">LIB</span><p><code>@GrpcService</code>/<code>@GrpcClient</code>로 Spring 통합.</p></div></div>
+          <div class="tool"><div><span class="tn">grpc-reflection / health</span><span class="kind lib">LIB</span><p>리플렉션으로 도구 탐색 지원, 표준 헬스체크 프로토콜 노출.</p></div></div>
+        </div>
+        <h3 class="reveal">GraphQL</h3>
+        <div class="toolgrid reveal">
+          <div class="tool"><div><span class="tn">GraphiQL / Apollo Sandbox</span><span class="kind gui">GUI</span><p>스키마 탐색·쿼리 자동완성. Spring은 <code>/graphiql</code> 기본 제공.</p></div></div>
+          <div class="tool"><div><span class="tn">spring-boot-starter-graphql</span><span class="kind lib">LIB</span><p><code>@QueryMapping</code>/<code>@SchemaMapping</code>로 리졸버 구현.</p></div></div>
+          <div class="tool"><div><span class="tn">DataLoader</span><span class="kind lib">LIB</span><p>N+1 방지용 배치/캐시 로더. GraphQL 운영의 핵심.</p></div></div>
+          <div class="tool"><div><span class="tn">쿼리 복잡도 제한</span><span class="kind lib">LIB</span><p>max depth·complexity 제한으로 악의적 깊은 쿼리 방어.</p></div></div>
+        </div>
+      </section>
+
+      <section class="block" id="errors">
+        <h2 class="section-title reveal">에러 케이스 & 대응</h2>
+        <h3 class="reveal">gRPC</h3>
+        <div class="errcase reveal">
+          <span class="sig">UNAVAILABLE: io exception / Connection refused</span>
+          <div class="row"><span class="lab cause">원인</span><p>서버 미기동, 네트워크 단절, 서버 재시작 중. 가장 흔한 gRPC 에러.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>클라이언트 재시도(지수 백오프) + <strong>deadline</strong> 설정, keepalive 설정, 로드밸런싱(클라이언트 사이드 LB/네임 리졸버).</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">DEADLINE_EXCEEDED</span>
+          <div class="row"><span class="lab cause">원인</span><p>호출이 설정한 deadline을 초과. 다운스트림 지연 누적.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>호출마다 적절한 deadline 전파(deadline propagation), 느린 RPC 분리, 스트리밍으로 부분 응답.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">RESOURCE_EXHAUSTED: message exceeds max size</span>
+          <div class="row"><span class="lab cause">원인</span><p>기본 메시지 크기(4MB) 초과.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><code>maxInboundMessageSize</code> 상향 또는 <strong>스트리밍으로 분할</strong> 전송. 대용량은 객체 스토리지 URL 전달 고려.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">브라우저에서 gRPC 직접 호출 실패</span>
+          <div class="row"><span class="lab cause">원인</span><p>브라우저가 HTTP/2 프레임을 raw로 제어 불가.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>gRPC-Web</strong> + Envoy 프록시 사용, 또는 외부는 REST/GraphQL로 노출하고 내부만 gRPC.</p></div>
+        </div>
+        <h3 class="reveal">GraphQL</h3>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">응답은 느린데 DB 쿼리가 수백 개 (N+1)</span>
+          <div class="row"><span class="lab cause">원인</span><p>필드 리졸버가 항목마다 개별 쿼리 실행.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p><strong>DataLoader</strong>로 배치 로딩 + 캐싱. 쿼리 단위 캐시 적용.</p></div>
+        </div>
+        <div class="errcase reveal warn-amber">
+          <span class="sig">깊은 중첩 쿼리로 서버 과부하</span>
+          <div class="row"><span class="lab cause">원인</span><p>악의적/실수로 매우 깊거나 넓은 쿼리 요청.</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>쿼리 <strong>depth/complexity 제한</strong>, persisted query(허용된 쿼리만), 타임아웃·페이지네이션 강제.</p></div>
+        </div>
+        <div class="errcase reveal">
+          <span class="sig">HTTP 200인데 errors 배열에 에러</span>
+          <div class="row"><span class="lab cause">원인</span><p>GraphQL은 부분 실패를 200 + <code>errors</code>로 표현(상태코드로 판단 불가).</p></div>
+          <div class="row"><span class="lab fix">대응</span><p>클라이언트가 <code>errors</code>를 반드시 검사, 서버는 일관된 에러 포맷·코드 체계 정의.</p></div>
+        </div>
       </section>
 
       <div class="pager">
